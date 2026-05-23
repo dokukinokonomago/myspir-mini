@@ -39,7 +39,8 @@ cp .env.example .env
 - `GOOGLE_REDIRECT_URI`
 
 `GOOGLE_REDIRECT_URI` はデフォルトで `http://localhost:8080/admin/google/callback` です。  
-Google Cloud Console 側の OAuth クライアントにも同じ URI を登録してください。
+Google Cloud Console 側の OAuth クライアントにも同じ URI を登録してください。  
+デフォルトポートは `8081` です。必要なら `.env` の `APP_PORT` と `APP_URL` を合わせて変更してください。
 
 3. Docker 起動
 
@@ -49,8 +50,8 @@ docker compose up --build
 
 4. アクセス
 
-- クライアント予約ページ: [http://localhost:8080/book](http://localhost:8080/book)
-- 管理画面ログイン: [http://localhost:8080/admin/login](http://localhost:8080/admin/login)
+- クライアント予約ページ: [http://localhost:8081/book](http://localhost:8081/book)
+- 管理画面ログイン: [http://localhost:8081/admin/login](http://localhost:8081/admin/login)
 
 起動時に `scripts/setup.php` が自動実行され、以下を行います。
 
