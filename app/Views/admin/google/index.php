@@ -4,6 +4,13 @@
         <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink">Google連携設定</h1>
     </div>
 
+    <?php
+    $clientIdConfigured = (bool) env_value('GOOGLE_CLIENT_ID');
+    $clientSecretConfigured = (bool) env_value('GOOGLE_CLIENT_SECRET');
+    $redirectUri = env_value('GOOGLE_REDIRECT_URI', '');
+    $appUrl = env_value('APP_URL', '');
+    ?>
+
     <div class="rounded-3xl border border-line bg-white p-6 shadow-sm">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -15,6 +22,37 @@
             </div>
         </div>
 
+        <?php if (!$isConfigured): ?>
+            <div class="mt-6 rounded-3xl border border-amber-200 bg-amber-50/70 p-5">
+                <h3 class="text-base font-semibold text-amber-900">Google OAuth の事前設定が未完了です</h3>
+                <p class="mt-2 text-sm leading-6 text-amber-800">
+                    先に Google Cloud Console で OAuth クライアントを作成し、`.env` に Client ID / Secret を入れてください。
+                </p>
+                <div class="mt-4 grid gap-3 md:grid-cols-2">
+                    <div class="rounded-2xl bg-white/80 p-4 text-sm">
+                        <p class="font-medium text-slate-800">設定ファイル</p>
+                        <p class="mt-2 break-all text-slate-600">/Users/dinho/Desktop/myspir_mini/.env</p>
+                    </div>
+                    <div class="rounded-2xl bg-white/80 p-4 text-sm">
+                        <p class="font-medium text-slate-800">承認済みリダイレクト URI</p>
+                        <p class="mt-2 break-all text-slate-600"><?= e($redirectUri) ?></p>
+                    </div>
+                </div>
+                <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-amber-900">
+                    <li>Google Cloud Console で Calendar API を有効化</li>
+                    <li>OAuth 同意画面を設定</li>
+                    <li>Web アプリの OAuth クライアントを作成</li>
+                    <li>承認済みリダイレクト URI に <span class="break-all font-medium"><?= e($redirectUri) ?></span> を登録</li>
+                    <li>`.env` に `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` を保存</li>
+                    <li>この画面を再読込してから「Google と連携する」を押下</li>
+                </ol>
+                <div class="mt-4 rounded-2xl bg-white/80 p-4 text-sm text-slate-700">
+                    <p>ローカル URL: <?= e($appUrl) ?></p>
+                    <p class="mt-2">現在の状態: Client ID <?= $clientIdConfigured ? '設定済み' : '未設定' ?> / Client Secret <?= $clientSecretConfigured ? '設定済み' : '未設定' ?></p>
+                </div>
+            </div>
+        <?php endif; ?>
+
         <?php if ($connectionError): ?>
             <div class="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
                 連携確認中にエラーが発生しました: <?= e($connectionError) ?>
@@ -25,10 +63,11 @@
             <div class="rounded-2xl bg-slate-50 p-4">
                 <dt class="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Client ID / Secret</dt>
                 <dd class="mt-2 text-sm text-slate-700"><?= $isConfigured ? '設定済み' : '未設定' ?></dd>
+                <dd class="mt-1 text-xs text-slate-500">Client ID: <?= $clientIdConfigured ? '設定済み' : '未設定' ?> / Secret: <?= $clientSecretConfigured ? '設定済み' : '未設定' ?></dd>
             </div>
             <div class="rounded-2xl bg-slate-50 p-4">
                 <dt class="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Redirect URI</dt>
-                <dd class="mt-2 break-all text-sm text-slate-700"><?= e(env_value('GOOGLE_REDIRECT_URI', '')) ?></dd>
+                <dd class="mt-2 break-all text-sm text-slate-700"><?= e($redirectUri) ?></dd>
             </div>
             <div class="rounded-2xl bg-slate-50 p-4">
                 <dt class="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">トークン有効期限</dt>
@@ -66,4 +105,3 @@
         </div>
     </div>
 </div>
-
