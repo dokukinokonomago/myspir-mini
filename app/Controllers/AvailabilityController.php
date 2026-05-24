@@ -186,6 +186,95 @@ class AvailabilityController
         redirect('/admin/availability-slots');
     }
 
+    public function destroy(string $id): void
+    {
+        $pdo = Database::connection();
+        $statement = $pdo->prepare(
+            "SELECT s.id, b.id AS booking_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id = :id
+             LIMIT 1"
+        );
+        $statement->execute(['id' => (int) $id]);
+        $slot = $statement->fetch();
+
+        if (!$slot) {
+            Session::flash('error', '削除対象の空き枠が見つかりません。');
+            redirect('/admin/availability-slots');
+        }
+
+        if ($slot['booking_id']) {
+            Session::flash('error', '予約済みの空き枠は削除できません。');
+            redirect('/admin/availability-slots');
+        }
+
+        $delete = $pdo->prepare('DELETE FROM availability_slots WHERE id = :id');
+        $delete->execute(['id' => (int) $id]);
+
+        Session::flash('success', '空き枠を削除しました。');
+        redirect('/admin/availability-slots');
+    }
+
+    public function bulkDestroy(): void
+    {
+        $date = trim((string) ($_POST['date'] ?? ''));
+        $startTime = trim((string) ($_POST['start_time'] ?? ''));
+        $endTime = trim((string) ($_POST['end_time'] ?? ''));
+
+        if ($date === '' || $startTime === '' || $endTime === '') {
+            Session::flash('error', '削除範囲の日時が不足しています。');
+            redirect('/admin/availability-slots/create');
+        }
+
+        try {
+            $rangeStart = new DateTimeImmutable($date . ' ' . $startTime);
+            $rangeEnd = new DateTimeImmutable($date . ' ' . $endTime);
+        } catch (\Throwable) {
+            Session::flash('error', '削除範囲の日時形式が不正です。');
+            redirect('/admin/availability-slots/create');
+        }
+
+        if ($rangeEnd <= $rangeStart) {
+            Session::flash('error', '削除範囲の終了時間は開始時間より後にしてください。');
+            redirect('/admin/availability-slots/create?week=' . $rangeStart->format('Y-m-d'));
+        }
+
+        $pdo = Database::connection();
+
+        $deletableCount = $this->countRangeSlots($pdo, $rangeStart, $rangeEnd, true);
+        $bookedCount = $this->countRangeSlots($pdo, $rangeStart, $rangeEnd, false);
+
+        if ($deletableCount === 0) {
+            $message = $bookedCount > 0
+                ? '選択範囲には予約済みの空き枠のみが含まれているため削除できません。'
+                : '選択範囲に削除できる空き枠がありません。';
+            Session::flash('error', $message);
+            redirect('/admin/availability-slots/create?week=' . $rangeStart->format('Y-m-d'));
+        }
+
+        $delete = $pdo->prepare(
+            "DELETE s
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.start_datetime >= :range_start
+               AND s.end_datetime <= :range_end
+               AND b.id IS NULL"
+        );
+        $delete->execute([
+            'range_start' => $rangeStart->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEnd->format('Y-m-d H:i:s'),
+        ]);
+
+        $message = $deletableCount . '件の空き枠を削除しました。';
+        if ($bookedCount > 0) {
+            $message .= ' 予約済み ' . $bookedCount . ' 件は削除していません。';
+        }
+
+        Session::flash('success', $message);
+        redirect('/admin/availability-slots/create?week=' . $rangeStart->format('Y-m-d'));
+    }
+
     private function shiftDateTime(DateTimeImmutable $dateTime, string $recurrenceType, int $offset): DateTimeImmutable
     {
         if ($offset === 0 || $recurrenceType === 'single') {
@@ -449,6 +538,7 @@ class AvailabilityController
                 'status' => $status,
                 'booking_id' => $row['booking_id'] ? (int) $row['booking_id'] : null,
                 'client_name' => $row['client_name'] ?: '',
+                'can_delete' => $row['booking_id'] ? false : true,
             ];
         }
 
@@ -465,5 +555,29 @@ class AvailabilityController
             'time_end_hour' => 21,
             'slot_step_minutes' => 30,
         ];
+    }
+
+    private function countRangeSlots(PDO $pdo, DateTimeImmutable $rangeStart, DateTimeImmutable $rangeEnd, bool $deletableOnly): int
+    {
+        $sql = $deletableOnly
+            ? "SELECT COUNT(*)
+               FROM availability_slots s
+               LEFT JOIN bookings b ON b.availability_slot_id = s.id
+               WHERE s.start_datetime >= :range_start
+                 AND s.end_datetime <= :range_end
+                 AND b.id IS NULL"
+            : "SELECT COUNT(*)
+               FROM availability_slots s
+               INNER JOIN bookings b ON b.availability_slot_id = s.id
+               WHERE s.start_datetime >= :range_start
+                 AND s.end_datetime <= :range_end";
+
+        $statement = $pdo->prepare($sql);
+        $statement->execute([
+            'range_start' => $rangeStart->format('Y-m-d H:i:s'),
+            'range_end' => $rangeEnd->format('Y-m-d H:i:s'),
+        ]);
+
+        return (int) $statement->fetchColumn();
     }
 }

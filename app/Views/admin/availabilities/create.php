@@ -9,6 +9,7 @@ $slotCount = (int) ((($timeEndHour - $timeStartHour) * 60) / $slotStepMinutes);
 $cellHeight = 34;
 $weekdayMap = ['Mon' => '月', 'Tue' => '火', 'Wed' => '水', 'Thu' => '木', 'Fri' => '金', 'Sat' => '土', 'Sun' => '日'];
 $now = new DateTimeImmutable();
+$slotEventsJson = json_encode($calendar['slot_events'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 $timeLabels = [];
 for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++) {
@@ -132,6 +133,12 @@ foreach ($calendar['days'] as $day) {
                 <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-ink"></span>新規選択中</span>
             </div>
 
+            <div class="mb-5 flex flex-wrap gap-3">
+                <button type="button" id="planner-mode-create" class="rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800">作成モード</button>
+                <button type="button" id="planner-mode-delete" class="rounded-full border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50">削除モード</button>
+                <p id="planner-mode-copy" class="self-center text-sm text-slate-500">現在は作成モードです。空き時間を選択して、区切りを作って保存します。</p>
+            </div>
+
             <div class="mb-6 lg:hidden">
                 <div class="space-y-4">
                     <?php foreach ($calendar['days'] as $day): ?>
@@ -235,6 +242,7 @@ foreach ($calendar['days'] as $day) {
                                         data-start-time="<?= e($timeLabel) ?>"
                                         data-status="<?= e($cellStatus) ?>"
                                         data-selectable="<?= $isSelectable ? 'true' : 'false' ?>"
+                                        data-delete-selectable="<?= $cellStatus !== 'past' ? 'true' : 'false' ?>"
                                         style="top: <?= e((string) ($slotIndex * $cellHeight)) ?>px; height: <?= e((string) $cellHeight) ?>px;"
                                     >
                                         <span class="pointer-events-none inline-block rounded-full px-2 py-1 text-[10px] text-transparent">
@@ -307,6 +315,16 @@ foreach ($calendar['days'] as $day) {
                                     <span class="rounded-full px-3 py-1 text-[11px] font-medium <?= $event['status'] === 'booked' ? 'bg-rose-50 text-rose-700' : ($event['status'] === 'hidden' ? 'bg-slate-100 text-slate-600' : 'bg-mist text-brand') ?>">
                                         <?= $event['status'] === 'booked' ? '予約済み' : ($event['status'] === 'hidden' ? '非表示' : '公開中') ?>
                                     </span>
+                                </div>
+                                <div class="mt-3 flex justify-end">
+                                    <?php if ($event['can_delete']): ?>
+                                        <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                            <?= csrf_field() ?>
+                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">この枠を削除</button>
+                                        </form>
+                                    <?php else: ?>
+                                        <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         <?php endforeach; ?>
@@ -403,6 +421,51 @@ foreach ($calendar['days'] as $day) {
     </div>
 </div>
 
+<div id="delete-modal" class="fixed inset-0 z-50 hidden bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto mt-auto max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl">
+        <div class="mb-5 flex items-start justify-between gap-4">
+            <div>
+                <p class="text-sm uppercase tracking-[0.2em] text-rose-500">Delete Range</p>
+                <h2 class="mt-2 text-2xl font-semibold text-ink">選択範囲の空き枠を削除</h2>
+                <p id="delete-summary" class="mt-3 text-sm leading-6 text-slate-500">範囲を選択すると削除対象を表示します。</p>
+            </div>
+            <button type="button" id="delete-modal-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
+        </div>
+
+        <form action="/admin/availability-slots/bulk-delete" method="POST" class="space-y-5">
+            <?= csrf_field() ?>
+            <input type="hidden" name="date" id="delete-date" value="">
+            <input type="hidden" name="start_time" id="delete-start-time" value="">
+            <input type="hidden" name="end_time" id="delete-end-time" value="">
+
+            <div class="rounded-3xl bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Range</p>
+                <p id="delete-range-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
+            </div>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-3xl border border-rose-100 bg-rose-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-rose-300">削除対象</p>
+                    <p id="delete-target-count" class="mt-2 text-2xl font-semibold text-rose-700">0</p>
+                </div>
+                <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">予約済みで残る件数</p>
+                    <p id="delete-booked-count" class="mt-2 text-2xl font-semibold text-slate-700">0</p>
+                </div>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200 p-4">
+                <p class="text-sm leading-6 text-slate-500">選択範囲の中で、未予約の空き枠だけを削除します。予約済み枠は保護されます。</p>
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-3">
+                <button type="button" id="delete-clear" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">選択をクリア</button>
+                <button type="submit" id="delete-submit" class="rounded-2xl bg-rose-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-700">選択範囲を削除</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
     .calendar-cell[data-status="past"] {
         background: linear-gradient(135deg, rgba(226, 232, 240, 0.65), rgba(248, 250, 252, 0.8));
@@ -421,7 +484,14 @@ foreach ($calendar['days'] as $day) {
         z-index: 20;
     }
 
-    .calendar-cell.is-selected span {
+    .calendar-cell.is-selected-delete {
+        background: linear-gradient(180deg, rgba(225, 29, 72, 0.92), rgba(190, 24, 93, 0.9));
+        border-color: rgba(190, 24, 93, 0.8);
+        z-index: 20;
+    }
+
+    .calendar-cell.is-selected span,
+    .calendar-cell.is-selected-delete span {
         color: white;
         background: rgba(255, 255, 255, 0.12);
     }
@@ -458,6 +528,17 @@ foreach ($calendar['days'] as $day) {
         const modal = document.getElementById('selection-modal');
         const closeButton = document.getElementById('selection-modal-close');
         const clearButton = document.getElementById('selection-clear');
+        const deleteModal = document.getElementById('delete-modal');
+        const deleteModalCloseButton = document.getElementById('delete-modal-close');
+        const deleteClearButton = document.getElementById('delete-clear');
+        const deleteSummary = document.getElementById('delete-summary');
+        const deleteRangePill = document.getElementById('delete-range-pill');
+        const deleteDateInput = document.getElementById('delete-date');
+        const deleteStartInput = document.getElementById('delete-start-time');
+        const deleteEndInput = document.getElementById('delete-end-time');
+        const deleteTargetCount = document.getElementById('delete-target-count');
+        const deleteBookedCount = document.getElementById('delete-booked-count');
+        const deleteSubmitButton = document.getElementById('delete-submit');
         const resetSplitsButton = document.getElementById('reset-splits');
         const selectionSummary = document.getElementById('selection-summary');
         const selectionSlotPill = document.getElementById('selection-slot-pill');
@@ -474,20 +555,26 @@ foreach ($calendar['days'] as $day) {
         const dividerButtons = document.getElementById('segment-divider-buttons');
         const segmentCards = document.getElementById('segment-cards');
         const segmentCountLabel = document.getElementById('segment-count-label');
+        const plannerModeCreateButton = document.getElementById('planner-mode-create');
+        const plannerModeDeleteButton = document.getElementById('planner-mode-delete');
+        const plannerModeCopy = document.getElementById('planner-mode-copy');
         const hasServerErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
+        const slotEvents = <?= $slotEventsJson ?: '[]' ?>;
 
         let dragState = null;
         let selection = null;
         let splitPoints = new Set();
         let segmentMeta = [];
+        let plannerMode = 'create';
 
         cells.forEach((cell) => {
             cell.addEventListener('pointerdown', (event) => {
-                if (cell.dataset.selectable !== 'true') {
+                if (!canStartSelection(cell)) {
                     return;
                 }
 
                 dragState = {
+                    mode: plannerMode,
                     dayIndex: Number(cell.dataset.dayIndex),
                     startIndex: Number(cell.dataset.slotIndex),
                 };
@@ -497,7 +584,7 @@ foreach ($calendar['days'] as $day) {
             });
 
             cell.addEventListener('pointerenter', () => {
-                if (!dragState || cell.dataset.selectable !== 'true') {
+                if (!dragState || !canExtendSelection(cell, dragState.mode)) {
                     return;
                 }
 
@@ -515,7 +602,15 @@ foreach ($calendar['days'] as $day) {
                 return;
             }
 
+            const finishedMode = dragState.mode;
             dragState = null;
+
+            if (finishedMode === 'delete') {
+                syncDeleteModalFields();
+                openDeleteModal();
+                return;
+            }
+
             resetSplits();
             syncModalFields();
             openModal();
@@ -525,6 +620,11 @@ foreach ($calendar['days'] as $day) {
         clearButton.addEventListener('click', () => {
             clearSelection();
             closeModal();
+        });
+        deleteModalCloseButton.addEventListener('click', closeDeleteModal);
+        deleteClearButton.addEventListener('click', () => {
+            clearSelection();
+            closeDeleteModal();
         });
 
         resetSplitsButton.addEventListener('click', () => {
@@ -538,12 +638,27 @@ foreach ($calendar['days'] as $day) {
             }
         });
 
+        deleteModal.addEventListener('click', (event) => {
+            if (event.target === deleteModal) {
+                closeDeleteModal();
+            }
+        });
+
         recurrenceInputs.forEach((input) => {
             input.addEventListener('change', syncRecurrenceControls);
         });
 
+        plannerModeCreateButton.addEventListener('click', () => {
+            setPlannerMode('create');
+        });
+
+        plannerModeDeleteButton.addEventListener('click', () => {
+            setPlannerMode('delete');
+        });
+
         mobileSlotButtons.forEach((button) => {
             button.addEventListener('click', () => {
+                setPlannerMode('create');
                 clearSelectionVisuals();
                 selection = {
                     dayIndex: findDayIndex(button.dataset.dayDate || ''),
@@ -557,11 +672,25 @@ foreach ($calendar['days'] as $day) {
             });
         });
 
+        setPlannerMode('create', true);
         syncRecurrenceControls();
         hydrateSelectionFromForm();
 
+        function canStartSelection(cell) {
+            return plannerMode === 'delete'
+                ? cell.dataset.deleteSelectable === 'true'
+                : cell.dataset.selectable === 'true';
+        }
+
+        function canExtendSelection(cell, mode) {
+            return mode === 'delete'
+                ? cell.dataset.deleteSelectable === 'true'
+                : cell.dataset.selectable === 'true';
+        }
+
         function updateSelectionFromDrag(dayIndex, anchorIndex, hoveredIndex) {
-            const reachableEnd = getReachableEndIndex(dayIndex, anchorIndex, hoveredIndex);
+            const activeMode = dragState?.mode || plannerMode;
+            const reachableEnd = getReachableEndIndex(dayIndex, anchorIndex, hoveredIndex, activeMode);
             const normalizedStart = Math.min(anchorIndex, reachableEnd);
             const normalizedEnd = Math.max(anchorIndex, reachableEnd);
             const dayDate = cells.find((cell) =>
@@ -578,7 +707,7 @@ foreach ($calendar['days'] as $day) {
             paintSelection();
         }
 
-        function getReachableEndIndex(dayIndex, startIndex, hoveredIndex) {
+        function getReachableEndIndex(dayIndex, startIndex, hoveredIndex, mode) {
             const direction = hoveredIndex >= startIndex ? 1 : -1;
             let current = startIndex;
 
@@ -586,7 +715,7 @@ foreach ($calendar['days'] as $day) {
                 const next = current + direction;
                 const nextCell = getCell(dayIndex, next);
 
-                if (!nextCell || nextCell.dataset.selectable !== 'true') {
+                if (!nextCell || !canExtendSelection(nextCell, mode)) {
                     break;
                 }
 
@@ -603,7 +732,8 @@ foreach ($calendar['days'] as $day) {
                     && Number(cell.dataset.slotIndex) >= selection.startIndex
                     && Number(cell.dataset.slotIndex) <= selection.endIndex;
 
-                cell.classList.toggle('is-selected', Boolean(isSelected));
+                cell.classList.toggle('is-selected', Boolean(isSelected) && plannerMode === 'create');
+                cell.classList.toggle('is-selected-delete', Boolean(isSelected) && plannerMode === 'delete');
             });
         }
 
@@ -630,6 +760,44 @@ foreach ($calendar['days'] as $day) {
             selectionSummary.textContent = `${date} の大きな空き時間を選択しました。次に区切り位置を決めて、各枠の内容を調整してください。`;
 
             renderSegmentEditor();
+        }
+
+        function syncDeleteModalFields() {
+            if (!selection) {
+                return;
+            }
+
+            const date = selection.date;
+            const startTime = slotIndexToTime(selection.startIndex);
+            const endTime = slotIndexToTime(selection.endIndex + 1);
+            const affectedSlots = getAffectedSlots(date, startTime, endTime);
+            const deletableCount = affectedSlots.filter((slot) => slot.can_delete).length;
+            const bookedCount = affectedSlots.length - deletableCount;
+
+            deleteDateInput.value = date;
+            deleteStartInput.value = startTime;
+            deleteEndInput.value = endTime;
+            deleteRangePill.textContent = `${date} ${startTime} - ${endTime}`;
+            deleteTargetCount.textContent = String(deletableCount);
+            deleteBookedCount.textContent = String(bookedCount);
+
+            if (deletableCount > 0) {
+                deleteSummary.textContent = `${date} の選択範囲にある空き枠をまとめて削除します。予約済み枠は保護されます。`;
+                deleteSubmitButton.disabled = false;
+                deleteSubmitButton.classList.remove('cursor-not-allowed', 'bg-slate-300', 'hover:bg-slate-300');
+                deleteSubmitButton.classList.add('bg-rose-600', 'hover:bg-rose-700');
+                return;
+            }
+
+            if (bookedCount > 0) {
+                deleteSummary.textContent = 'この範囲には予約済み枠のみが含まれています。削除は実行できません。';
+            } else {
+                deleteSummary.textContent = 'この範囲には削除できる既存の空き枠がありません。';
+            }
+
+            deleteSubmitButton.disabled = true;
+            deleteSubmitButton.classList.add('cursor-not-allowed', 'bg-slate-300', 'hover:bg-slate-300');
+            deleteSubmitButton.classList.remove('bg-rose-600', 'hover:bg-rose-700');
         }
 
         function renderSegmentEditor() {
@@ -819,13 +987,32 @@ foreach ($calendar['days'] as $day) {
         }
 
         function openModal() {
+            closeDeleteModal(false);
             modal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
+            syncBodyScrollLock();
         }
 
         function closeModal() {
             modal.classList.add('hidden');
-            document.body.style.overflow = '';
+            syncBodyScrollLock();
+        }
+
+        function openDeleteModal() {
+            closeModal();
+            deleteModal.classList.remove('hidden');
+            syncBodyScrollLock();
+        }
+
+        function closeDeleteModal(syncScrollLock = true) {
+            deleteModal.classList.add('hidden');
+            if (syncScrollLock) {
+                syncBodyScrollLock();
+            }
+        }
+
+        function syncBodyScrollLock() {
+            const hasOpenModal = !modal.classList.contains('hidden') || !deleteModal.classList.contains('hidden');
+            document.body.style.overflow = hasOpenModal ? 'hidden' : '';
         }
 
         function clearSelection() {
@@ -839,6 +1026,16 @@ foreach ($calendar['days'] as $day) {
             selectionSegmentsJsonInput.value = '';
             selectionSlotPill.textContent = '未選択';
             selectionSummary.textContent = 'まず大きな空き時間を選び、その後で自由に区切ります。';
+            deleteDateInput.value = '';
+            deleteStartInput.value = '';
+            deleteEndInput.value = '';
+            deleteRangePill.textContent = '未選択';
+            deleteSummary.textContent = '範囲を選択すると削除対象を表示します。';
+            deleteTargetCount.textContent = '0';
+            deleteBookedCount.textContent = '0';
+            deleteSubmitButton.disabled = false;
+            deleteSubmitButton.classList.remove('cursor-not-allowed', 'bg-slate-300', 'hover:bg-slate-300');
+            deleteSubmitButton.classList.add('bg-rose-600', 'hover:bg-rose-700');
             segmentStrip.innerHTML = '';
             dividerButtons.innerHTML = '';
             segmentCards.innerHTML = '';
@@ -847,7 +1044,10 @@ foreach ($calendar['days'] as $day) {
         }
 
         function clearSelectionVisuals() {
-            cells.forEach((cell) => cell.classList.remove('is-selected'));
+            cells.forEach((cell) => {
+                cell.classList.remove('is-selected');
+                cell.classList.remove('is-selected-delete');
+            });
         }
 
         function syncRecurrenceControls() {
@@ -862,6 +1062,29 @@ foreach ($calendar['days'] as $day) {
 
             recurrenceCountInput.removeAttribute('readonly');
             recurrenceCountInput.classList.remove('bg-slate-100', 'text-slate-400');
+        }
+
+        function setPlannerMode(mode, preserveFormState = false) {
+            plannerMode = mode;
+            if (preserveFormState) {
+                clearSelectionVisuals();
+            } else {
+                clearSelection();
+            }
+            closeModal();
+            closeDeleteModal();
+
+            const isCreateMode = mode === 'create';
+            plannerModeCreateButton.className = isCreateMode
+                ? 'rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800'
+                : 'rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100';
+            plannerModeDeleteButton.className = isCreateMode
+                ? 'rounded-full border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50'
+                : 'rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700';
+            plannerModeCopy.textContent = isCreateMode
+                ? '現在は作成モードです。空き時間を選択して、区切りを作って保存します。'
+                : '現在は削除モードです。削除したい範囲を選択すると、対象件数を確認して一括削除できます。';
+            paintSelection();
         }
 
         function hydrateSelectionFromForm() {
@@ -917,6 +1140,14 @@ foreach ($calendar['days'] as $day) {
             if (hasServerErrors) {
                 openModal();
             }
+        }
+
+        function getAffectedSlots(date, startTime, endTime) {
+            return slotEvents.filter((slot) => (
+                slot.date === date
+                && slot.start_time >= startTime
+                && slot.end_time <= endTime
+            ));
         }
 
         function escapeHtml(value) {

@@ -44,12 +44,24 @@
                             </td>
                             <td class="px-5 py-4 text-slate-600"><?= e($slot['memo'] ?: '-') ?></td>
                             <td class="px-5 py-4 text-right">
-                                <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
-                                    <?= csrf_field() ?>
-                                    <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
-                                        <?= (int) $slot['is_active'] === 1 ? '非表示にする' : '表示する' ?>
-                                    </button>
-                                </form>
+                                <div class="flex justify-end gap-2">
+                                    <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
+                                        <?= csrf_field() ?>
+                                        <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
+                                            <?= (int) $slot['is_active'] === 1 ? '非表示にする' : '表示する' ?>
+                                        </button>
+                                    </form>
+                                    <?php if (!$slot['booking_id']): ?>
+                                        <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                            <?= csrf_field() ?>
+                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                                削除
+                                            </button>
+                                        </form>
+                                    <?php else: ?>
+                                        <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>

@@ -24,7 +24,9 @@ $router->add('GET', '/admin', [DashboardController::class, 'index'], ['auth' => 
 $router->add('GET', '/admin/availability-slots', [AvailabilityController::class, 'index'], ['auth' => true]);
 $router->add('GET', '/admin/availability-slots/create', [AvailabilityController::class, 'create'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots', [AvailabilityController::class, 'store'], ['auth' => true]);
+$router->add('POST', '/admin/availability-slots/bulk-delete', [AvailabilityController::class, 'bulkDestroy'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/{id}/toggle', [AvailabilityController::class, 'toggle'], ['auth' => true]);
+$router->add('POST', '/admin/availability-slots/{id}/delete', [AvailabilityController::class, 'destroy'], ['auth' => true]);
 
 $router->add('GET', '/admin/bookings', [BookingAdminController::class, 'index'], ['auth' => true]);
 $router->add('GET', '/admin/bookings/{id}', [BookingAdminController::class, 'show'], ['auth' => true]);
@@ -33,4 +35,3 @@ $router->add('GET', '/admin/google', [GoogleController::class, 'index'], ['auth'
 $router->add('POST', '/admin/google/connect', [GoogleController::class, 'connect'], ['auth' => true]);
 $router->add('GET', '/admin/google/callback', [GoogleController::class, 'callback'], ['auth' => true]);
 $router->add('POST', '/admin/google/disconnect', [GoogleController::class, 'disconnect'], ['auth' => true]);
-
