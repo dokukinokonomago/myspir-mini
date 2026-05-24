@@ -39,6 +39,7 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
 }
 
 $mobileAvailableByDay = [];
+$mobileEventsByDay = [];
 foreach ($calendar['days'] as $day) {
     $daySlots = [];
 
@@ -65,6 +66,10 @@ foreach ($calendar['days'] as $day) {
     }
 
     $mobileAvailableByDay[$day['date']] = $daySlots;
+    $mobileEventsByDay[$day['date']] = array_values(array_filter(
+        $calendar['slot_events'],
+        static fn (array $event): bool => $event['date'] === $day['date']
+    ));
 }
 ?>
 
@@ -107,7 +112,7 @@ foreach ($calendar['days'] as $day) {
             <div class="mb-5 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-4 lg:hidden">
                 <p class="text-sm font-semibold text-ink">スマホ操作モード</p>
                 <p class="mt-2 text-sm leading-6 text-slate-500">
-                    日付を選んで、空いている開始時刻をタップしてください。`30分` または `60分` をその場で選べます。
+                    作成モードでは日付ごとの開始時刻をタップし、削除モードでは既存枠カードから削除できます。
                 </p>
             </div>
 
@@ -143,6 +148,7 @@ foreach ($calendar['days'] as $day) {
                 <div class="space-y-4">
                     <?php foreach ($calendar['days'] as $day): ?>
                         <?php $mobileSlots = $mobileAvailableByDay[$day['date']] ?? []; ?>
+                        <?php $mobileEvents = $mobileEventsByDay[$day['date']] ?? []; ?>
                         <section class="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm <?= $day['is_today'] ? 'ring-2 ring-blue-100' : '' ?>">
                             <div class="mb-4 flex items-center justify-between gap-3">
                                 <div>
@@ -152,46 +158,78 @@ foreach ($calendar['days'] as $day) {
                                 <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500"><?= $day['is_today'] ? 'Today' : 'Day' ?></span>
                             </div>
 
-                            <?php if (!$mobileSlots): ?>
-                                <p class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">この日は新規作成できる空き時間がありません。</p>
-                            <?php else: ?>
-                                <div class="space-y-3">
-                                    <?php foreach ($mobileSlots as $slot): ?>
-                                        <div class="rounded-3xl border border-slate-100 px-4 py-4">
-                                            <div class="mb-3 flex items-center justify-between">
-                                                <p class="text-base font-semibold text-ink"><?= e($slot['start_time']) ?> 開始</p>
-                                                <span class="rounded-full bg-mist px-3 py-1 text-xs font-medium text-brand">Tap</span>
-                                            </div>
-                                            <div class="grid gap-2 sm:grid-cols-2">
-                                                <button
-                                                    type="button"
-                                                    class="mobile-slot-button rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:border-brand hover:bg-mist"
-                                                    data-day-date="<?= e($day['date']) ?>"
-                                                    data-start-time="<?= e($slot['start_time']) ?>"
-                                                    data-end-time="<?= e($slot['end_time_30']) ?>"
-                                                    data-duration="30"
-                                                >
-                                                    <span class="block font-semibold text-ink">30分で作成</span>
-                                                    <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_30']) ?></span>
-                                                </button>
-                                                <?php if ($slot['can_fit_sixty']): ?>
+                            <div class="mobile-create-pane space-y-3">
+                                <?php if (!$mobileSlots): ?>
+                                    <p class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">この日は新規作成できる空き時間がありません。</p>
+                                <?php else: ?>
+                                    <div class="space-y-3">
+                                        <?php foreach ($mobileSlots as $slot): ?>
+                                            <div class="rounded-3xl border border-slate-100 px-4 py-4">
+                                                <div class="mb-3 flex items-center justify-between">
+                                                    <p class="text-base font-semibold text-ink"><?= e($slot['start_time']) ?> 開始</p>
+                                                    <span class="rounded-full bg-mist px-3 py-1 text-xs font-medium text-brand">Tap</span>
+                                                </div>
+                                                <div class="grid gap-2 sm:grid-cols-2">
                                                     <button
                                                         type="button"
                                                         class="mobile-slot-button rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:border-brand hover:bg-mist"
                                                         data-day-date="<?= e($day['date']) ?>"
                                                         data-start-time="<?= e($slot['start_time']) ?>"
-                                                        data-end-time="<?= e($slot['end_time_60']) ?>"
-                                                        data-duration="60"
+                                                        data-end-time="<?= e($slot['end_time_30']) ?>"
+                                                        data-duration="30"
                                                     >
-                                                        <span class="block font-semibold text-ink">60分で作成</span>
-                                                        <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_60']) ?></span>
+                                                        <span class="block font-semibold text-ink">30分で作成</span>
+                                                        <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_30']) ?></span>
                                                     </button>
+                                                    <?php if ($slot['can_fit_sixty']): ?>
+                                                        <button
+                                                            type="button"
+                                                            class="mobile-slot-button rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:border-brand hover:bg-mist"
+                                                            data-day-date="<?= e($day['date']) ?>"
+                                                            data-start-time="<?= e($slot['start_time']) ?>"
+                                                            data-end-time="<?= e($slot['end_time_60']) ?>"
+                                                            data-duration="60"
+                                                        >
+                                                            <span class="block font-semibold text-ink">60分で作成</span>
+                                                            <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_60']) ?></span>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="mobile-delete-pane hidden space-y-3">
+                                <?php if (!$mobileEvents): ?>
+                                    <p class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">この日の既存枠はありません。</p>
+                                <?php else: ?>
+                                    <?php foreach ($mobileEvents as $event): ?>
+                                        <div class="rounded-3xl border border-slate-100 px-4 py-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p class="text-base font-semibold text-ink"><?= e($event['start_time']) ?> - <?= e($event['end_time']) ?></p>
+                                                    <p class="mt-1 text-xs text-slate-500"><?= e($event['memo'] ?: ($event['status'] === 'booked' ? '予約あり' : '空き枠')) ?></p>
+                                                </div>
+                                                <span class="rounded-full px-3 py-1 text-[11px] font-medium <?= $event['status'] === 'booked' ? 'bg-rose-50 text-rose-700' : ($event['status'] === 'hidden' ? 'bg-slate-100 text-slate-600' : 'bg-mist text-brand') ?>">
+                                                    <?= $event['status'] === 'booked' ? '予約済み' : ($event['status'] === 'hidden' ? '非表示' : '公開中') ?>
+                                                </span>
+                                            </div>
+                                            <div class="mt-3 flex justify-end">
+                                                <?php if ($event['can_delete']): ?>
+                                                    <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                                        <?= csrf_field() ?>
+                                                        <button type="submit" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50">この枠を削除</button>
+                                                    </form>
+                                                <?php else: ?>
+                                                    <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
                                     <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
                         </section>
                     <?php endforeach; ?>
                 </div>
@@ -551,6 +589,8 @@ foreach ($calendar['days'] as $day) {
         const recurrenceInputs = Array.from(document.querySelectorAll('input[name="recurrence_type"]'));
         const cells = Array.from(document.querySelectorAll('.calendar-cell'));
         const mobileSlotButtons = Array.from(document.querySelectorAll('.mobile-slot-button'));
+        const mobileCreatePanes = Array.from(document.querySelectorAll('.mobile-create-pane'));
+        const mobileDeletePanes = Array.from(document.querySelectorAll('.mobile-delete-pane'));
         const segmentStrip = document.getElementById('segment-strip');
         const dividerButtons = document.getElementById('segment-divider-buttons');
         const segmentCards = document.getElementById('segment-cards');
@@ -1084,6 +1124,12 @@ foreach ($calendar['days'] as $day) {
             plannerModeCopy.textContent = isCreateMode
                 ? '現在は作成モードです。空き時間を選択して、区切りを作って保存します。'
                 : '現在は削除モードです。削除したい範囲を選択すると、対象件数を確認して一括削除できます。';
+            mobileCreatePanes.forEach((pane) => {
+                pane.classList.toggle('hidden', !isCreateMode);
+            });
+            mobileDeletePanes.forEach((pane) => {
+                pane.classList.toggle('hidden', isCreateMode);
+            });
             paintSelection();
         }
 
