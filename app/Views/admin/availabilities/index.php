@@ -3,8 +3,9 @@
         <div>
             <p class="text-sm uppercase tracking-[0.2em] text-brand">Availability</p>
             <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink">空き枠一覧</h1>
+            <p class="mt-3 text-sm text-slate-500">一覧確認に加えて、週カレンダーから直感的に空き枠を追加できます。</p>
         </div>
-        <a href="/admin/availability-slots/create" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">空き枠を追加</a>
+        <a href="/admin/availability-slots/create" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">週カレンダーで追加</a>
     </div>
 
     <div class="overflow-hidden rounded-3xl border border-line bg-white shadow-sm">
@@ -62,4 +63,3 @@
         </div>
     </div>
 </div>
-

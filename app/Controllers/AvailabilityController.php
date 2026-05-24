@@ -32,9 +32,14 @@ class AvailabilityController
 
     public function create(): void
     {
+        $calendar = $this->buildCalendarState(
+            $this->resolveCalendarReferenceDate($_GET['week'] ?? null)
+        );
+
         view('admin/availabilities/create', [
             'pageTitle' => '空き枠追加',
             'isAdminArea' => true,
+            'calendar' => $calendar,
             'form' => [
                 'date' => '',
                 'start_time' => '',
@@ -129,9 +134,14 @@ class AvailabilityController
         }
 
         if ($errors) {
+            $referenceDate = $form['date'] !== ''
+                ? $this->resolveCalendarReferenceDate($form['date'])
+                : $this->resolveCalendarReferenceDate($_GET['week'] ?? null);
+
             view('admin/availabilities/create', [
                 'pageTitle' => '空き枠追加',
                 'isAdminArea' => true,
+                'calendar' => $this->buildCalendarState($referenceDate),
                 'errors' => $errors,
                 'form' => $form,
             ]);
@@ -262,5 +272,103 @@ class AvailabilityController
         }
 
         return false;
+    }
+
+    private function resolveCalendarReferenceDate(null|string $rawDate): DateTimeImmutable
+    {
+        if (is_string($rawDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate) === 1) {
+            try {
+                return new DateTimeImmutable($rawDate . ' 00:00:00');
+            } catch (\Throwable) {
+            }
+        }
+
+        return new DateTimeImmutable('today');
+    }
+
+    private function buildCalendarState(DateTimeImmutable $referenceDate): array
+    {
+        $weekStart = $referenceDate->modify('monday this week')->setTime(0, 0, 0);
+        $weekEnd = $weekStart->modify('+7 days');
+        $dayMap = [];
+        $days = [];
+
+        for ($index = 0; $index < 7; $index++) {
+            $day = $weekStart->modify('+' . $index . ' day');
+            $dateKey = $day->format('Y-m-d');
+            $dayMap[$dateKey] = $index;
+            $days[] = [
+                'index' => $index,
+                'date' => $dateKey,
+                'weekday_short' => $day->format('D'),
+                'label' => $day->format('n/j'),
+                'is_today' => $day->format('Y-m-d') === (new DateTimeImmutable('today'))->format('Y-m-d'),
+            ];
+        }
+
+        $statement = Database::connection()->prepare(
+            "SELECT s.*,
+                    b.id AS booking_id,
+                    b.client_name,
+                    b.client_email
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.start_datetime < :week_end
+               AND s.end_datetime > :week_start
+             ORDER BY s.start_datetime ASC"
+        );
+        $statement->execute([
+            'week_start' => $weekStart->format('Y-m-d H:i:s'),
+            'week_end' => $weekEnd->format('Y-m-d H:i:s'),
+        ]);
+
+        $slotEvents = [];
+        $weekStats = [
+            'available' => 0,
+            'booked' => 0,
+            'hidden' => 0,
+        ];
+
+        foreach ($statement->fetchAll() as $row) {
+            $start = new DateTimeImmutable($row['start_datetime']);
+            $dateKey = $start->format('Y-m-d');
+
+            if (!isset($dayMap[$dateKey])) {
+                continue;
+            }
+
+            $status = $row['booking_id']
+                ? 'booked'
+                : ((int) $row['is_active'] === 1 ? 'available' : 'hidden');
+
+            $weekStats[$status]++;
+
+            $slotEvents[] = [
+                'id' => (int) $row['id'],
+                'day_index' => $dayMap[$dateKey],
+                'date' => $dateKey,
+                'start_time' => $start->format('H:i'),
+                'end_time' => (new DateTimeImmutable($row['end_datetime']))->format('H:i'),
+                'duration_minutes' => (int) $row['duration_minutes'],
+                'memo' => $row['memo'] ?: '',
+                'status' => $status,
+                'booking_id' => $row['booking_id'] ? (int) $row['booking_id'] : null,
+                'client_name' => $row['client_name'] ?: '',
+            ];
+        }
+
+        return [
+            'week_start' => $weekStart->format('Y-m-d'),
+            'week_start_label' => $weekStart->format('Y年n月j日'),
+            'week_end_label' => $weekStart->modify('+6 days')->format('n月j日'),
+            'prev_week' => $weekStart->modify('-7 days')->format('Y-m-d'),
+            'next_week' => $weekStart->modify('+7 days')->format('Y-m-d'),
+            'days' => $days,
+            'slot_events' => $slotEvents,
+            'stats' => $weekStats,
+            'time_start_hour' => 8,
+            'time_end_hour' => 21,
+            'slot_step_minutes' => 30,
+        ];
     }
 }

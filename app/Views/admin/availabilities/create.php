@@ -1,66 +1,247 @@
+<?php
+declare(strict_types=1);
+
+$timeStartHour = (int) $calendar['time_start_hour'];
+$timeEndHour = (int) $calendar['time_end_hour'];
+$slotStepMinutes = (int) $calendar['slot_step_minutes'];
+$slotCount = (int) ((($timeEndHour - $timeStartHour) * 60) / $slotStepMinutes);
+$cellHeight = 34;
+$weekdayMap = ['Mon' => '月', 'Tue' => '火', 'Wed' => '水', 'Thu' => '木', 'Fri' => '金', 'Sat' => '土', 'Sun' => '日'];
+
+$timeLabels = [];
+for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++) {
+    $minutes = ($timeStartHour * 60) + ($slotIndex * $slotStepMinutes);
+    $timeLabels[] = sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+}
+
+$occupiedCells = [];
+foreach ($calendar['slot_events'] as $event) {
+    $startMinutes = (((int) substr($event['start_time'], 0, 2)) * 60) + ((int) substr($event['start_time'], 3, 2));
+    $endMinutes = (((int) substr($event['end_time'], 0, 2)) * 60) + ((int) substr($event['end_time'], 3, 2));
+    $startRow = (int) floor(($startMinutes - ($timeStartHour * 60)) / $slotStepMinutes);
+    $rowSpan = max(1, (int) (($endMinutes - $startMinutes) / $slotStepMinutes));
+
+    for ($row = $startRow; $row < ($startRow + $rowSpan); $row++) {
+        $occupiedCells[$event['day_index']][$row] = $event['status'];
+    }
+}
+
+$selectedDuration = '30';
+if (!empty($form['start_time']) && !empty($form['end_time'])) {
+    $selectedDuration = (string) max(
+        30,
+        (((int) substr($form['end_time'], 0, 2) * 60) + ((int) substr($form['end_time'], 3, 2)))
+        - (((int) substr($form['start_time'], 0, 2) * 60) + ((int) substr($form['start_time'], 3, 2)))
+    );
+}
+?>
+
 <div class="space-y-6">
-    <div>
-        <p class="text-sm uppercase tracking-[0.2em] text-brand">Availability</p>
-        <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink">空き枠追加</h1>
-        <p class="mt-3 text-sm text-slate-500">日付・時間はフリックで上下スクロールし、最後に OK を押して確定します。</p>
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+            <p class="text-sm uppercase tracking-[0.2em] text-brand">Availability Planner</p>
+            <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink">週カレンダーで空き枠を作成</h1>
+            <p class="mt-3 max-w-3xl text-sm leading-7 text-slate-500">
+                Spir 風に、カレンダー上の時間帯を直接なぞって空き枠を作成します。30分または60分の範囲をドラッグし、内容を確認して保存してください。
+            </p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+            <a href="/admin/availability-slots?week=<?= e($calendar['week_start']) ?>" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">一覧を見る</a>
+            <a href="/admin/availability-slots/create?week=<?= e((new DateTimeImmutable('today'))->format('Y-m-d')) ?>" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">今週へ戻る</a>
+        </div>
     </div>
 
-    <div class="rounded-3xl border border-line bg-white p-6 shadow-sm">
-        <?php if (!empty($errors)): ?>
-            <div class="mb-6 rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                <?= e(implode(' ', $errors)) ?>
-            </div>
-        <?php endif; ?>
+    <?php if (!empty($errors)): ?>
+        <div class="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <?= e(implode(' ', $errors)) ?>
+        </div>
+    <?php endif; ?>
 
-        <form action="/admin/availability-slots" method="POST" class="grid gap-5 md:grid-cols-2">
+    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section class="rounded-[2rem] border border-line bg-white p-5 shadow-sm">
+            <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <p class="text-sm font-medium text-slate-500">対象週</p>
+                    <h2 class="mt-1 text-2xl font-semibold tracking-tight text-ink">
+                        <?= e($calendar['week_start_label']) ?> - <?= e($calendar['week_end_label']) ?>
+                    </h2>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <a href="/admin/availability-slots/create?week=<?= e($calendar['prev_week']) ?>" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100">前の週</a>
+                    <a href="/admin/availability-slots/create?week=<?= e($calendar['next_week']) ?>" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100">次の週</a>
+                </div>
+            </div>
+
+            <div class="mb-5 grid gap-3 md:grid-cols-3">
+                <div class="rounded-3xl bg-mist p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">公開中</p>
+                    <p class="mt-2 text-2xl font-semibold text-ink"><?= e((string) $calendar['stats']['available']) ?></p>
+                </div>
+                <div class="rounded-3xl bg-rose-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-rose-300">予約済み</p>
+                    <p class="mt-2 text-2xl font-semibold text-rose-700"><?= e((string) $calendar['stats']['booked']) ?></p>
+                </div>
+                <div class="rounded-3xl bg-slate-100 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">非表示</p>
+                    <p class="mt-2 text-2xl font-semibold text-slate-700"><?= e((string) $calendar['stats']['hidden']) ?></p>
+                </div>
+            </div>
+
+            <div class="mb-4 flex flex-wrap gap-3 text-xs text-slate-500">
+                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-brand"></span>公開中の空き枠</span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>予約済み</span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-slate-400"></span>非表示</span>
+                <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-ink"></span>新規選択中</span>
+            </div>
+
+            <div class="overflow-auto rounded-[1.75rem] border border-slate-200">
+                <div class="min-w-[980px] bg-white">
+                    <div class="grid border-b border-slate-200 bg-slate-50" style="grid-template-columns: 72px repeat(7, minmax(0, 1fr));">
+                        <div class="border-r border-slate-200 px-3 py-4 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Time</div>
+                        <?php foreach ($calendar['days'] as $day): ?>
+                            <div class="border-r border-slate-200 px-3 py-4 last:border-r-0 <?= $day['is_today'] ? 'bg-blue-50/80' : '' ?>">
+                                <p class="text-xs uppercase tracking-[0.2em] text-slate-400"><?= e($weekdayMap[$day['weekday_short']] ?? $day['weekday_short']) ?></p>
+                                <p class="mt-2 text-lg font-semibold text-ink"><?= e($day['label']) ?></p>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <div class="grid" style="grid-template-columns: 72px repeat(7, minmax(0, 1fr));">
+                        <div class="border-r border-slate-200 bg-slate-50">
+                            <?php foreach ($timeLabels as $slotIndex => $label): ?>
+                                <div class="border-b border-slate-100 px-3 text-[11px] text-slate-400" style="height: <?= e((string) $cellHeight) ?>px; line-height: <?= e((string) $cellHeight) ?>px;">
+                                    <?= $slotIndex % 2 === 0 ? e($label) : '' ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <?php foreach ($calendar['days'] as $day): ?>
+                            <div
+                                class="calendar-day-column relative border-r border-slate-200 last:border-r-0"
+                                data-day-index="<?= e((string) $day['index']) ?>"
+                                data-day-date="<?= e($day['date']) ?>"
+                                style="height: <?= e((string) ($slotCount * $cellHeight)) ?>px;"
+                            >
+                                <?php for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++): ?>
+                                    <?php
+                                    $status = $occupiedCells[$day['index']][$slotIndex] ?? 'free';
+                                    $timeLabel = $timeLabels[$slotIndex];
+                                    $isPast = (new DateTimeImmutable($day['date'] . ' ' . $timeLabel . ':00')) < new DateTimeImmutable();
+                                    $cellStatus = $isPast && $status === 'free' ? 'past' : $status;
+                                    $isSelectable = $cellStatus === 'free';
+                                    ?>
+                                    <button
+                                        type="button"
+                                        class="calendar-cell absolute inset-x-0 border-b border-slate-100 px-2 text-left text-[10px] transition <?= $isSelectable ? 'hover:bg-blue-50' : '' ?>"
+                                        data-day-index="<?= e((string) $day['index']) ?>"
+                                        data-day-date="<?= e($day['date']) ?>"
+                                        data-slot-index="<?= e((string) $slotIndex) ?>"
+                                        data-start-time="<?= e($timeLabel) ?>"
+                                        data-status="<?= e($cellStatus) ?>"
+                                        data-selectable="<?= $isSelectable ? 'true' : 'false' ?>"
+                                        style="top: <?= e((string) ($slotIndex * $cellHeight)) ?>px; height: <?= e((string) $cellHeight) ?>px;"
+                                    >
+                                        <span class="pointer-events-none inline-block rounded-full px-2 py-1 text-[10px] text-transparent">
+                                            <?= e($timeLabel) ?>
+                                        </span>
+                                    </button>
+                                <?php endfor; ?>
+
+                                <?php foreach ($calendar['slot_events'] as $event): ?>
+                                    <?php if ((int) $event['day_index'] !== (int) $day['index']) {
+                                        continue;
+                                    }
+
+                                    $eventStart = (((int) substr($event['start_time'], 0, 2)) * 60) + ((int) substr($event['start_time'], 3, 2));
+                                    $eventEnd = (((int) substr($event['end_time'], 0, 2)) * 60) + ((int) substr($event['end_time'], 3, 2));
+                                    $eventTop = (int) ((($eventStart - ($timeStartHour * 60)) / $slotStepMinutes) * $cellHeight);
+                                    $eventHeight = max($cellHeight - 4, (int) ((($eventEnd - $eventStart) / $slotStepMinutes) * $cellHeight) - 4);
+                                    $eventClass = match ($event['status']) {
+                                        'booked' => 'bg-rose-500 text-white shadow-rose-100',
+                                        'hidden' => 'bg-slate-300 text-slate-700 shadow-slate-100',
+                                        default => 'bg-brand text-white shadow-blue-100',
+                                    };
+                                    ?>
+                                    <div
+                                        class="pointer-events-none absolute inset-x-1 z-10 rounded-2xl px-3 py-2 text-xs shadow-md <?= $eventClass ?>"
+                                        style="top: <?= e((string) ($eventTop + 2)) ?>px; height: <?= e((string) $eventHeight) ?>px;"
+                                    >
+                                        <p class="font-semibold"><?= e($event['start_time']) ?> - <?= e($event['end_time']) ?></p>
+                                        <p class="mt-1 truncate opacity-90">
+                                            <?php if ($event['status'] === 'booked'): ?>
+                                                予約済み: <?= e($event['client_name'] ?: '予約あり') ?>
+                                            <?php else: ?>
+                                                <?= e($event['memo'] ?: '空き枠') ?>
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="space-y-4">
+            <div class="rounded-[2rem] border border-line bg-white p-6 shadow-sm">
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">How To Use</p>
+                <h2 class="mt-2 text-xl font-semibold text-ink">使い方</h2>
+                <ol class="mt-4 space-y-3 text-sm leading-6 text-slate-500">
+                    <li>1. 空いているマスを 1 コマまたは 2 コマ分なぞる</li>
+                    <li>2. 自動で開くモーダルで繰り返し設定やメモを入れる</li>
+                    <li>3. 保存すると、その週のカレンダー上に即時反映される</li>
+                </ol>
+            </div>
+
+            <div class="rounded-[2rem] border border-line bg-white p-6 shadow-sm">
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">This Week</p>
+                <h2 class="mt-2 text-xl font-semibold text-ink">週の予定状況</h2>
+                <div class="mt-4 space-y-3">
+                    <?php if (!$calendar['slot_events']): ?>
+                        <p class="text-sm text-slate-500">この週の空き枠はまだありません。</p>
+                    <?php else: ?>
+                        <?php foreach ($calendar['slot_events'] as $event): ?>
+                            <div class="rounded-3xl border border-slate-100 px-4 py-4 text-sm">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <p class="font-semibold text-ink"><?= e($event['date']) ?> <?= e($event['start_time']) ?> - <?= e($event['end_time']) ?></p>
+                                        <p class="mt-1 text-xs text-slate-500"><?= e($event['memo'] ?: ($event['status'] === 'booked' ? '予約あり' : '空き枠')) ?></p>
+                                    </div>
+                                    <span class="rounded-full px-3 py-1 text-[11px] font-medium <?= $event['status'] === 'booked' ? 'bg-rose-50 text-rose-700' : ($event['status'] === 'hidden' ? 'bg-slate-100 text-slate-600' : 'bg-mist text-brand') ?>">
+                                        <?= $event['status'] === 'booked' ? '予約済み' : ($event['status'] === 'hidden' ? '非表示' : '公開中') ?>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<div id="selection-modal" class="fixed inset-0 z-50 hidden bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto mt-auto max-w-2xl rounded-[2rem] bg-white p-6 shadow-2xl">
+        <div class="mb-5 flex items-start justify-between gap-4">
+            <div>
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">Save Selection</p>
+                <h2 class="mt-2 text-2xl font-semibold text-ink">選択した空き枠を保存</h2>
+                <p id="selection-summary" class="mt-3 text-sm leading-6 text-slate-500">日時を選択するとここに表示します。</p>
+            </div>
+            <button type="button" id="selection-modal-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
+        </div>
+
+        <form action="/admin/availability-slots" method="POST" id="selection-form" class="grid gap-5 md:grid-cols-2">
             <?= csrf_field() ?>
+            <input type="hidden" name="date" id="selection-date" value="<?= e($form['date'] ?? '') ?>">
+            <input type="hidden" name="start_time" id="selection-start-time" value="<?= e($form['start_time'] ?? '') ?>">
+            <input type="hidden" name="end_time" id="selection-end-time" value="<?= e($form['end_time'] ?? '') ?>">
+            <input type="hidden" name="duration_minutes" id="selection-duration" value="<?= e($selectedDuration) ?>">
 
-            <input type="hidden" name="date" id="date" value="<?= e($form['date'] ?? '') ?>" required>
-            <input type="hidden" name="start_time" id="start_time" value="<?= e($form['start_time'] ?? '') ?>" required>
-            <input type="hidden" name="end_time" id="end_time" value="<?= e($form['end_time'] ?? '') ?>" required>
-
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">日付</label>
-                <button
-                    type="button"
-                    data-picker-open="date"
-                    class="flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left outline-none transition hover:border-brand focus:border-brand"
-                >
-                    <span class="text-sm text-slate-800" data-picker-label="date">日付を選択</span>
-                    <span class="text-slate-400">⌄</span>
-                </button>
-            </div>
-
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">面談時間</label>
-                <select name="duration_minutes" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand">
-                    <option value="30" <?= selected($form['duration_minutes'] ?? '30', '30') ?>>30分</option>
-                    <option value="60" <?= selected($form['duration_minutes'] ?? '30', '60') ?>>60分</option>
-                </select>
-            </div>
-
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">開始時間</label>
-                <button
-                    type="button"
-                    data-picker-open="start_time"
-                    class="flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left outline-none transition hover:border-brand focus:border-brand"
-                >
-                    <span class="text-sm text-slate-800" data-picker-label="start_time">開始時間を選択</span>
-                    <span class="text-slate-400">⌄</span>
-                </button>
-            </div>
-
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">終了時間</label>
-                <button
-                    type="button"
-                    data-picker-open="end_time"
-                    class="flex w-full items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-left outline-none transition hover:border-brand focus:border-brand"
-                >
-                    <span class="text-sm text-slate-800" data-picker-label="end_time">終了時間を選択</span>
-                    <span class="text-slate-400">⌄</span>
-                </button>
+            <div class="md:col-span-2 rounded-3xl bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Slot</p>
+                <p id="selection-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
             </div>
 
             <div class="md:col-span-2">
@@ -69,22 +250,22 @@
                     <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
                         <input type="radio" name="recurrence_type" value="single" <?= checked(($form['recurrence_type'] ?? 'single') === 'single') ?> class="sr-only peer">
                         <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">1回だけ作成</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">選んだ日だけ空き枠を追加します。</p>
+                            <p class="text-sm font-semibold text-ink">1回だけ</p>
+                            <p class="mt-1 text-xs leading-5 text-slate-500">この時間だけ保存します。</p>
                         </div>
                     </label>
                     <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
                         <input type="radio" name="recurrence_type" value="weekly" <?= checked(($form['recurrence_type'] ?? 'single') === 'weekly') ?> class="sr-only peer">
                         <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">毎週まとめて作成</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ曜日・同じ時間で毎週追加します。</p>
+                            <p class="text-sm font-semibold text-ink">毎週</p>
+                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ曜日・同時刻で繰り返します。</p>
                         </div>
                     </label>
                     <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
                         <input type="radio" name="recurrence_type" value="monthly" <?= checked(($form['recurrence_type'] ?? 'single') === 'monthly') ?> class="sr-only peer">
                         <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">毎月まとめて作成</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ日付・同じ時間で毎月追加します。</p>
+                            <p class="text-sm font-semibold text-ink">毎月</p>
+                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ日付・同時刻で繰り返します。</p>
                         </div>
                     </label>
                 </div>
@@ -92,19 +273,18 @@
 
             <div>
                 <label class="mb-2 block text-sm font-medium text-slate-700">作成回数</label>
-                <input
-                    type="number"
-                    name="recurrence_count"
-                    min="1"
-                    max="24"
-                    value="<?= e($form['recurrence_count'] ?? '1') ?>"
-                    class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand"
-                    required
-                >
-                <p class="mt-2 text-xs text-slate-500">例: 毎週 4 回なら、今週を含めて 4 週分を作成します。</p>
+                <input type="number" name="recurrence_count" id="selection-recurrence-count" min="1" max="24" value="<?= e($form['recurrence_count'] ?? '1') ?>" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand" required>
+                <p class="mt-2 text-xs text-slate-500">毎週 / 毎月を選んだときだけ複数指定できます。</p>
             </div>
 
-            <label class="inline-flex items-center gap-3 text-sm text-slate-700 md:self-end">
+            <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">面談時間</label>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span id="selection-duration-label" class="text-sm font-medium text-ink"><?= e($selectedDuration) ?>分</span>
+                </div>
+            </div>
+
+            <label class="inline-flex items-center gap-3 text-sm text-slate-700">
                 <input type="checkbox" name="is_active" value="1" <?= checked(($form['is_active'] ?? '1') === '1') ?> class="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand">
                 すぐ公開する
             </label>
@@ -114,454 +294,200 @@
                 <textarea name="memo" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand"><?= e($form['memo'] ?? '') ?></textarea>
             </div>
 
-            <div class="md:col-span-2 rounded-3xl bg-slate-50 p-5">
-                <p class="text-sm font-medium text-ink">作成プレビュー</p>
-                <p class="mt-2 text-sm leading-6 text-slate-500" id="recurrence-summary">
-                    日付・時間・作成方法を選ぶと、ここに作成内容を表示します。
-                </p>
-            </div>
-
-            <div class="md:col-span-2">
+            <div class="md:col-span-2 flex flex-wrap justify-end gap-3">
+                <button type="button" id="selection-clear" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">選択をクリア</button>
                 <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">保存する</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="wheel-picker-modal" class="fixed inset-0 z-50 hidden bg-slate-950/30 px-4 py-6">
-    <div class="mx-auto mt-auto max-w-xl rounded-[2rem] bg-white p-5 shadow-2xl">
-        <div class="mb-4 flex items-center justify-between">
-            <div>
-                <p class="text-sm uppercase tracking-[0.2em] text-brand">Wheel Picker</p>
-                <h2 id="wheel-picker-title" class="mt-2 text-xl font-semibold text-ink">選択</h2>
-            </div>
-            <button type="button" id="wheel-picker-cancel-top" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-500">閉じる</button>
-        </div>
-
-        <div class="relative overflow-hidden rounded-3xl bg-slate-50 px-3 py-4">
-            <div class="pointer-events-none absolute inset-x-6 top-1/2 z-10 h-12 -translate-y-1/2 rounded-2xl border border-brand/20 bg-white/80 shadow-sm"></div>
-            <div id="wheel-picker-columns" class="grid gap-3"></div>
-        </div>
-
-        <div class="mt-5 flex items-center justify-end gap-3">
-            <button type="button" id="wheel-picker-cancel" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600">キャンセル</button>
-            <button type="button" id="wheel-picker-ok" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white">OK</button>
-        </div>
-    </div>
-</div>
-
 <style>
-    .wheel-column {
-        height: 240px;
-        overflow-y: auto;
-        scroll-snap-type: y mandatory;
-        overscroll-behavior: contain;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        padding-block: 96px;
+    .calendar-cell[data-status="past"] {
+        background: linear-gradient(135deg, rgba(226, 232, 240, 0.65), rgba(248, 250, 252, 0.8));
     }
 
-    .wheel-column::-webkit-scrollbar {
-        display: none;
+    .calendar-cell[data-status="available"],
+    .calendar-cell[data-status="booked"],
+    .calendar-cell[data-status="hidden"] {
+        background-color: rgba(241, 245, 249, 0.8);
+        cursor: not-allowed;
     }
 
-    .wheel-option {
-        height: 48px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        scroll-snap-align: center;
-        border-radius: 16px;
-        font-size: 0.95rem;
-        color: #64748b;
-        transition: all 0.2s ease;
+    .calendar-cell.is-selected {
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.88));
+        border-color: rgba(15, 23, 42, 0.8);
+        z-index: 20;
     }
 
-    .wheel-option[data-selected="true"] {
-        color: #0f172a;
-        font-weight: 600;
-        transform: scale(1.02);
+    .calendar-cell.is-selected span {
+        color: white;
+        background: rgba(255, 255, 255, 0.12);
     }
 </style>
 
 <script>
     (() => {
-        const hiddenInputs = {
-            date: document.getElementById('date'),
-            start_time: document.getElementById('start_time'),
-            end_time: document.getElementById('end_time'),
-        };
-        const recurrenceCountInput = document.querySelector('input[name="recurrence_count"]');
+        const modal = document.getElementById('selection-modal');
+        const closeButton = document.getElementById('selection-modal-close');
+        const clearButton = document.getElementById('selection-clear');
+        const selectionSummary = document.getElementById('selection-summary');
+        const selectionSlotPill = document.getElementById('selection-slot-pill');
+        const selectionDateInput = document.getElementById('selection-date');
+        const selectionStartInput = document.getElementById('selection-start-time');
+        const selectionEndInput = document.getElementById('selection-end-time');
+        const selectionDurationInput = document.getElementById('selection-duration');
+        const selectionDurationLabel = document.getElementById('selection-duration-label');
+        const recurrenceCountInput = document.getElementById('selection-recurrence-count');
+        const recurrenceInputs = Array.from(document.querySelectorAll('input[name="recurrence_type"]'));
+        const cells = Array.from(document.querySelectorAll('.calendar-cell'));
+        const hasServerErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
 
-        const labelNodes = {
-            date: document.querySelector('[data-picker-label="date"]'),
-            start_time: document.querySelector('[data-picker-label="start_time"]'),
-            end_time: document.querySelector('[data-picker-label="end_time"]'),
-        };
+        let dragState = null;
+        let selection = null;
 
-        const recurrenceSummary = document.getElementById('recurrence-summary');
-        const modal = document.getElementById('wheel-picker-modal');
-        const titleNode = document.getElementById('wheel-picker-title');
-        const columnsNode = document.getElementById('wheel-picker-columns');
-        const okButton = document.getElementById('wheel-picker-ok');
-        const cancelButtons = [
-            document.getElementById('wheel-picker-cancel'),
-            document.getElementById('wheel-picker-cancel-top'),
-        ];
+        cells.forEach((cell) => {
+            cell.addEventListener('pointerdown', (event) => {
+                if (cell.dataset.selectable !== 'true') {
+                    return;
+                }
 
-        const yearBase = new Date().getFullYear();
-        const activePicker = {
-            field: null,
-            columns: [],
-        };
+                dragState = {
+                    dayIndex: cell.dataset.dayIndex,
+                    startIndex: Number(cell.dataset.slotIndex),
+                };
 
-        const fieldConfigs = {
-            date: {
-                title: '日付を選択',
-                columns: () => [
-                    {
-                        key: 'year',
-                        label: '年',
-                        values: Array.from({ length: 5 }, (_, index) => yearBase + index),
-                    },
-                    {
-                        key: 'month',
-                        label: '月',
-                        values: Array.from({ length: 12 }, (_, index) => index + 1),
-                    },
-                    {
-                        key: 'day',
-                        label: '日',
-                        values: buildDayValues(readDateSelection()),
-                    },
-                ],
-                readValue: () => hiddenInputs.date.value,
-                writeValue: (selection) => {
-                    const value = `${selection.year}-${pad(selection.month)}-${pad(selection.day)}`;
-                    hiddenInputs.date.value = value;
-                    labelNodes.date.textContent = `${selection.year}年${selection.month}月${selection.day}日`;
-                },
-            },
-            start_time: {
-                title: '開始時間を選択',
-                columns: () => buildTimeColumns(),
-                readValue: () => hiddenInputs.start_time.value,
-                writeValue: (selection) => {
-                    const value = `${pad(selection.hour)}:${pad(selection.minute)}`;
-                    hiddenInputs.start_time.value = value;
-                    labelNodes.start_time.textContent = value;
-                    updateSummary();
-                },
-            },
-            end_time: {
-                title: '終了時間を選択',
-                columns: () => buildTimeColumns(),
-                readValue: () => hiddenInputs.end_time.value,
-                writeValue: (selection) => {
-                    const value = `${pad(selection.hour)}:${pad(selection.minute)}`;
-                    hiddenInputs.end_time.value = value;
-                    labelNodes.end_time.textContent = value;
-                    updateSummary();
-                },
-            },
-        };
+                updateSelectionFromDrag(Number(cell.dataset.dayIndex), dragState.startIndex, dragState.startIndex);
+                event.preventDefault();
+            });
 
-        document.querySelectorAll('[data-picker-open]').forEach((button) => {
-            button.addEventListener('click', () => openPicker(button.dataset.pickerOpen));
+            cell.addEventListener('pointerenter', () => {
+                if (!dragState || cell.dataset.selectable !== 'true') {
+                    return;
+                }
+
+                if (cell.dataset.dayIndex !== dragState.dayIndex) {
+                    return;
+                }
+
+                updateSelectionFromDrag(Number(cell.dataset.dayIndex), dragState.startIndex, Number(cell.dataset.slotIndex));
+            });
         });
 
-        cancelButtons.forEach((button) => {
-            button.addEventListener('click', closePicker);
+        document.addEventListener('pointerup', () => {
+            if (!dragState || !selection) {
+                dragState = null;
+                return;
+            }
+
+            dragState = null;
+            openModal();
+        });
+
+        closeButton.addEventListener('click', closeModal);
+        clearButton.addEventListener('click', () => {
+            clearSelection();
+            closeModal();
         });
 
         modal.addEventListener('click', (event) => {
             if (event.target === modal) {
-                closePicker();
+                closeModal();
             }
         });
 
-        okButton.addEventListener('click', () => {
-            if (!activePicker.field) {
+        recurrenceInputs.forEach((input) => {
+            input.addEventListener('change', syncRecurrenceControls);
+        });
+
+        syncRecurrenceControls();
+        hydrateSelectionFromForm();
+
+        function updateSelectionFromDrag(dayIndex, anchorIndex, hoveredIndex) {
+            const offset = hoveredIndex - anchorIndex;
+            const limitedOffset = Math.sign(offset) * Math.min(Math.abs(offset), 1);
+            const normalizedStart = Math.min(anchorIndex, anchorIndex + limitedOffset);
+            const normalizedEnd = Math.max(anchorIndex, anchorIndex + limitedOffset);
+
+            selection = {
+                dayIndex,
+                startIndex: normalizedStart,
+                endIndex: normalizedEnd,
+            };
+
+            paintSelection();
+            syncModalFields();
+        }
+
+        function paintSelection() {
+            cells.forEach((cell) => {
+                const isSelected = selection
+                    && Number(cell.dataset.dayIndex) === selection.dayIndex
+                    && Number(cell.dataset.slotIndex) >= selection.startIndex
+                    && Number(cell.dataset.slotIndex) <= selection.endIndex;
+
+                cell.classList.toggle('is-selected', Boolean(isSelected));
+            });
+        }
+
+        function syncModalFields() {
+            if (!selection) {
                 return;
             }
 
-            const field = activePicker.field;
-            const config = fieldConfigs[field];
-            const selection = {};
+            const selectedCells = cells.filter((cell) =>
+                Number(cell.dataset.dayIndex) === selection.dayIndex
+                && Number(cell.dataset.slotIndex) >= selection.startIndex
+                && Number(cell.dataset.slotIndex) <= selection.endIndex
+            );
 
-            activePicker.columns.forEach((column) => {
-                selection[column.key] = getSelectedValue(column);
-            });
-
-            if (field === 'date') {
-                const maxDay = buildDayValues(selection).length;
-                selection.day = Math.min(selection.day, maxDay);
+            if (selectedCells.length === 0) {
+                return;
             }
 
-            config.writeValue(selection);
-            if (field === 'date') {
-                updateSummary();
-            }
-            closePicker();
-        });
+            const firstCell = selectedCells[0];
+            const lastCell = selectedCells[selectedCells.length - 1];
+            const date = firstCell.dataset.dayDate;
+            const startTime = firstCell.dataset.startTime;
+            const endTime = slotIndexToTime(selection.endIndex + 1);
+            const duration = selectedCells.length * <?= e((string) $slotStepMinutes) ?>;
 
-        document.querySelectorAll('input[name="recurrence_type"], input[name="recurrence_count"]').forEach((element) => {
-            element.addEventListener('change', () => {
-                syncRecurrenceControls();
-                updateSummary();
-            });
-            element.addEventListener('input', updateSummary);
-        });
-
-        initializeLabels();
-        syncRecurrenceControls();
-        updateSummary();
-
-        function initializeLabels() {
-            const dateValue = hiddenInputs.date.value;
-            if (dateValue) {
-                const [year, month, day] = dateValue.split('-').map(Number);
-                labelNodes.date.textContent = `${year}年${month}月${day}日`;
-            }
-
-            ['start_time', 'end_time'].forEach((field) => {
-                if (hiddenInputs[field].value) {
-                    labelNodes[field].textContent = hiddenInputs[field].value;
-                }
-            });
+            selectionDateInput.value = date;
+            selectionStartInput.value = startTime;
+            selectionEndInput.value = endTime;
+            selectionDurationInput.value = String(duration);
+            selectionDurationLabel.textContent = `${duration}分`;
+            selectionSlotPill.textContent = `${date} ${startTime} - ${endTime}`;
+            selectionSummary.textContent = `${date} の ${startTime} から ${endTime} までを新しい空き枠として保存します。`;
         }
 
-        function openPicker(field) {
-            const config = fieldConfigs[field];
-            activePicker.field = field;
-            activePicker.columns = config.columns();
-            titleNode.textContent = config.title;
-            columnsNode.innerHTML = '';
-            columnsNode.className = `grid gap-3 ${field === 'date' ? 'grid-cols-3' : 'grid-cols-2'}`;
+        function slotIndexToTime(slotIndex) {
+            const minutes = (<?= e((string) $timeStartHour) ?> * 60) + (slotIndex * <?= e((string) $slotStepMinutes) ?>);
+            const hour = String(Math.floor(minutes / 60)).padStart(2, '0');
+            const minute = String(minutes % 60).padStart(2, '0');
+            return `${hour}:${minute}`;
+        }
 
-            activePicker.columns.forEach((column) => {
-                const wrapper = document.createElement('div');
-                const title = document.createElement('p');
-                title.className = 'mb-3 text-center text-xs font-medium uppercase tracking-[0.2em] text-slate-400';
-                title.textContent = column.label;
-
-                const scroll = document.createElement('div');
-                scroll.className = 'wheel-column';
-                scroll.dataset.key = column.key;
-
-                column.values.forEach((value) => {
-                    const option = document.createElement('div');
-                    option.className = 'wheel-option';
-                    option.dataset.value = String(value);
-                    option.textContent = displayOption(field, column.key, value);
-                    scroll.appendChild(option);
-                });
-
-                wrapper.appendChild(title);
-                wrapper.appendChild(scroll);
-                columnsNode.appendChild(wrapper);
-
-                let scrollTimer = null;
-                scroll.addEventListener('scroll', () => {
-                    window.clearTimeout(scrollTimer);
-                    scrollTimer = window.setTimeout(() => {
-                        snapToNearest(scroll);
-                        if (field === 'date' && (column.key === 'year' || column.key === 'month')) {
-                            refreshDayColumn();
-                        }
-                    }, 90);
-                });
-            });
-
+        function openModal() {
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
-            applyCurrentSelection(field);
         }
 
-        function closePicker() {
-            activePicker.field = null;
-            activePicker.columns = [];
+        function closeModal() {
             modal.classList.add('hidden');
             document.body.style.overflow = '';
         }
 
-        function applyCurrentSelection(field) {
-            if (field === 'date') {
-                const selection = readDateSelection();
-                setColumnSelection('year', selection.year);
-                setColumnSelection('month', selection.month);
-                refreshDayColumn();
-                setColumnSelection('day', selection.day);
-                return;
-            }
-
-            const time = readTimeSelection(field);
-            setColumnSelection('hour', time.hour);
-            setColumnSelection('minute', time.minute);
-        }
-
-        function refreshDayColumn() {
-            const column = activePicker.columns.find((item) => item.key === 'day');
-            const scroll = columnsNode.querySelector('[data-key="day"]');
-            if (!column || !scroll) {
-                return;
-            }
-
-            const current = getSelectedValue(column) || readDateSelection().day;
-            const year = Number(getSelectedByKey('year'));
-            const month = Number(getSelectedByKey('month'));
-            const values = buildDayValues({ year, month });
-            column.values = values;
-            scroll.innerHTML = '';
-
-            values.forEach((value) => {
-                const option = document.createElement('div');
-                option.className = 'wheel-option';
-                option.dataset.value = String(value);
-                option.textContent = displayOption('date', 'day', value);
-                scroll.appendChild(option);
-            });
-
-            setColumnSelection('day', Math.min(Number(current), values.length));
-        }
-
-        function setColumnSelection(key, value) {
-            const scroll = columnsNode.querySelector(`[data-key="${key}"]`);
-            const option = scroll ? scroll.querySelector(`[data-value="${value}"]`) : null;
-            if (!scroll || !option) {
-                return;
-            }
-
-            const top = option.offsetTop - (scroll.clientHeight / 2) + (option.clientHeight / 2);
-            scroll.scrollTop = top;
-            markSelection(scroll, option);
-        }
-
-        function snapToNearest(scroll) {
-            const options = Array.from(scroll.querySelectorAll('.wheel-option'));
-            if (options.length === 0) {
-                return;
-            }
-
-            const center = scroll.scrollTop + (scroll.clientHeight / 2);
-            let nearest = options[0];
-            let nearestDistance = Math.abs((nearest.offsetTop + nearest.clientHeight / 2) - center);
-
-            options.forEach((option) => {
-                const distance = Math.abs((option.offsetTop + option.clientHeight / 2) - center);
-                if (distance < nearestDistance) {
-                    nearest = option;
-                    nearestDistance = distance;
-                }
-            });
-
-            scroll.scrollTo({ top: nearest.offsetTop - (scroll.clientHeight / 2) + (nearest.clientHeight / 2), behavior: 'smooth' });
-            markSelection(scroll, nearest);
-        }
-
-        function markSelection(scroll, activeOption) {
-            scroll.querySelectorAll('.wheel-option').forEach((option) => {
-                option.dataset.selected = option === activeOption ? 'true' : 'false';
-            });
-        }
-
-        function getSelectedValue(column) {
-            const selected = columnsNode.querySelector(`[data-key="${column.key}"] .wheel-option[data-selected="true"]`);
-            if (selected) {
-                return Number(selected.dataset.value);
-            }
-
-            return Number(column.values[0]);
-        }
-
-        function getSelectedByKey(key) {
-            const selected = columnsNode.querySelector(`[data-key="${key}"] .wheel-option[data-selected="true"]`);
-            return selected ? selected.dataset.value : null;
-        }
-
-        function readDateSelection() {
-            if (!hiddenInputs.date.value) {
-                const now = new Date();
-                return {
-                    year: now.getFullYear(),
-                    month: now.getMonth() + 1,
-                    day: now.getDate(),
-                };
-            }
-
-            const [year, month, day] = hiddenInputs.date.value.split('-').map(Number);
-            return { year, month, day };
-        }
-
-        function readTimeSelection(field) {
-            const value = hiddenInputs[field].value;
-            if (!value) {
-                return field === 'end_time'
-                    ? { hour: 11, minute: 0 }
-                    : { hour: 10, minute: 0 };
-            }
-
-            const [hour, minute] = value.split(':').map(Number);
-            return { hour, minute };
-        }
-
-        function buildTimeColumns() {
-            return [
-                {
-                    key: 'hour',
-                    label: '時',
-                    values: Array.from({ length: 24 }, (_, index) => index),
-                },
-                {
-                    key: 'minute',
-                    label: '分',
-                    values: Array.from({ length: 12 }, (_, index) => index * 5),
-                },
-            ];
-        }
-
-        function buildDayValues(selection) {
-            const year = Number(selection.year);
-            const month = Number(selection.month);
-            const lastDay = new Date(year, month, 0).getDate();
-            return Array.from({ length: lastDay }, (_, index) => index + 1);
-        }
-
-        function displayOption(field, key, value) {
-            if (field === 'date') {
-                return `${value}${key === 'year' ? '年' : key === 'month' ? '月' : '日'}`;
-            }
-
-            return key === 'hour' ? `${pad(value)}時` : `${pad(value)}分`;
-        }
-
-        function pad(value) {
-            return String(value).padStart(2, '0');
-        }
-
-        function updateSummary() {
-            const date = hiddenInputs.date.value;
-            const startTime = hiddenInputs.start_time.value;
-            const endTime = hiddenInputs.end_time.value;
-            const recurrenceType = document.querySelector('input[name="recurrence_type"]:checked')?.value || 'single';
-            const recurrenceCount = Number(recurrenceCountInput?.value || 1);
-
-            if (!date || !startTime || !endTime) {
-                recurrenceSummary.textContent = '日付・開始時間・終了時間を選ぶと、ここに作成内容を表示します。';
-                return;
-            }
-
-            const labels = {
-                single: '1回だけ',
-                weekly: '毎週',
-                monthly: '毎月',
-            };
-
-            const repeatText = recurrenceType === 'single'
-                ? 'この日だけ 1 件作成'
-                : `${labels[recurrenceType]}で ${Math.max(1, recurrenceCount)} 件作成`;
-
-            recurrenceSummary.textContent = `${date} ${startTime} - ${endTime} を起点に、${repeatText}します。`;
+        function clearSelection() {
+            selection = null;
+            selectionDateInput.value = '';
+            selectionStartInput.value = '';
+            selectionEndInput.value = '';
+            selectionDurationInput.value = '30';
+            selectionDurationLabel.textContent = '30分';
+            selectionSlotPill.textContent = '未選択';
+            selectionSummary.textContent = '日時を選択するとここに表示します。';
+            cells.forEach((cell) => cell.classList.remove('is-selected'));
         }
 
         function syncRecurrenceControls() {
@@ -576,6 +502,41 @@
 
             recurrenceCountInput.removeAttribute('readonly');
             recurrenceCountInput.classList.remove('bg-slate-100', 'text-slate-400');
+        }
+
+        function hydrateSelectionFromForm() {
+            if (!selectionDateInput.value || !selectionStartInput.value || !selectionEndInput.value) {
+                return;
+            }
+
+            const matchingStartCell = cells.find((cell) =>
+                cell.dataset.dayDate === selectionDateInput.value
+                && cell.dataset.startTime === selectionStartInput.value
+            );
+
+            if (!matchingStartCell) {
+                return;
+            }
+
+            const startIndex = Number(matchingStartCell.dataset.slotIndex);
+            const endIndex = timeToSlotIndex(selectionEndInput.value) - 1;
+            selection = {
+                dayIndex: Number(matchingStartCell.dataset.dayIndex),
+                startIndex,
+                endIndex: Math.max(startIndex, endIndex),
+            };
+
+            paintSelection();
+            syncModalFields();
+
+            if (hasServerErrors) {
+                openModal();
+            }
+        }
+
+        function timeToSlotIndex(time) {
+            const [hour, minute] = time.split(':').map(Number);
+            return (((hour * 60) + minute) - (<?= e((string) $timeStartHour) ?> * 60)) / <?= e((string) $slotStepMinutes) ?>;
         }
     })();
 </script>
