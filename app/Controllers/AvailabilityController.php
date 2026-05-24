@@ -45,6 +45,7 @@ class AvailabilityController
                 'start_time' => '',
                 'end_time' => '',
                 'duration_minutes' => '30',
+                'segments_json' => '',
                 'recurrence_type' => 'single',
                 'recurrence_count' => '1',
                 'is_active' => '1',
@@ -60,6 +61,7 @@ class AvailabilityController
             'start_time' => trim((string) ($_POST['start_time'] ?? '')),
             'end_time' => trim((string) ($_POST['end_time'] ?? '')),
             'duration_minutes' => trim((string) ($_POST['duration_minutes'] ?? '30')),
+            'segments_json' => trim((string) ($_POST['segments_json'] ?? '')),
             'recurrence_type' => trim((string) ($_POST['recurrence_type'] ?? 'single')),
             'recurrence_count' => trim((string) ($_POST['recurrence_count'] ?? '1')),
             'is_active' => isset($_POST['is_active']) ? '1' : '0',
@@ -70,10 +72,6 @@ class AvailabilityController
 
         if ($form['date'] === '' || $form['start_time'] === '' || $form['end_time'] === '') {
             $errors[] = '日付・開始時間・終了時間は必須です。';
-        }
-
-        if (!in_array((int) $form['duration_minutes'], [30, 60], true)) {
-            $errors[] = '面談時間は 30 分または 60 分を選択してください。';
         }
 
         if (!in_array($form['recurrence_type'], ['single', 'weekly', 'monthly'], true)) {
@@ -90,41 +88,38 @@ class AvailabilityController
             $errors[] = '作成回数は 1 回から 24 回で指定してください。';
         }
 
-        $start = null;
-        $end = null;
-
-        if (!$errors) {
-            $start = new DateTimeImmutable($form['date'] . ' ' . $form['start_time']);
-            $end = new DateTimeImmutable($form['date'] . ' ' . $form['end_time']);
-
-            if ($end <= $start) {
-                $errors[] = '終了時間は開始時間より後にしてください。';
-            }
-        }
-
+        $segments = $this->extractSegmentsFromForm($form, $errors);
         $slotsToCreate = [];
 
-        if (!$errors && $start && $end) {
+        if (!$errors && $segments !== []) {
             $pdo = Database::connection();
 
             for ($index = 0; $index < $recurrenceCount; $index++) {
-                $occurrenceStart = $this->shiftDateTime($start, $form['recurrence_type'], $index);
-                $occurrenceEnd = $this->shiftDateTime($end, $form['recurrence_type'], $index);
+                foreach ($segments as $segment) {
+                    $segmentStart = new DateTimeImmutable($segment['date'] . ' ' . $segment['start_time']);
+                    $segmentEnd = new DateTimeImmutable($segment['date'] . ' ' . $segment['end_time']);
 
-                if ($occurrenceEnd <= $occurrenceStart) {
-                    $errors[] = '繰り返し後の終了日時が不正です。';
-                    break;
-                }
+                    $occurrenceStart = $this->shiftDateTime($segmentStart, $form['recurrence_type'], $index);
+                    $occurrenceEnd = $this->shiftDateTime($segmentEnd, $form['recurrence_type'], $index);
 
-                $conflictMessage = $this->findConflictMessage($pdo, $occurrenceStart, $occurrenceEnd);
+                    if ($occurrenceEnd <= $occurrenceStart) {
+                        $errors[] = '繰り返し後の終了日時が不正です。';
+                        break 2;
+                    }
 
-                if ($conflictMessage !== null) {
-                    $errors[] = $conflictMessage;
-                } else {
-                    $slotsToCreate[] = [
-                        'start_datetime' => $occurrenceStart->format('Y-m-d H:i:s'),
-                        'end_datetime' => $occurrenceEnd->format('Y-m-d H:i:s'),
-                    ];
+                    $conflictMessage = $this->findConflictMessage($pdo, $occurrenceStart, $occurrenceEnd);
+
+                    if ($conflictMessage !== null) {
+                        $errors[] = $conflictMessage;
+                    } else {
+                        $slotsToCreate[] = [
+                            'start_datetime' => $occurrenceStart->format('Y-m-d H:i:s'),
+                            'end_datetime' => $occurrenceEnd->format('Y-m-d H:i:s'),
+                            'duration_minutes' => (int) $segment['duration_minutes'],
+                            'is_active' => (int) $segment['is_active'],
+                            'memo' => $segment['memo'] !== '' ? $segment['memo'] : null,
+                        ];
+                    }
                 }
             }
 
@@ -161,9 +156,9 @@ class AvailabilityController
                 $statement->execute([
                     'start_datetime' => $slot['start_datetime'],
                     'end_datetime' => $slot['end_datetime'],
-                    'duration_minutes' => (int) $form['duration_minutes'],
-                    'is_active' => (int) $form['is_active'],
-                    'memo' => $form['memo'] ?: null,
+                    'duration_minutes' => (int) $slot['duration_minutes'],
+                    'is_active' => (int) $slot['is_active'],
+                    'memo' => $slot['memo'],
                 ]);
             }
 
@@ -272,6 +267,106 @@ class AvailabilityController
         }
 
         return false;
+    }
+
+    private function extractSegmentsFromForm(array $form, array &$errors): array
+    {
+        $rawSegments = [];
+
+        if ($form['segments_json'] !== '') {
+            $decoded = json_decode($form['segments_json'], true);
+
+            if (!is_array($decoded)) {
+                $errors[] = '空き枠の分割データを読み取れませんでした。';
+                return [];
+            }
+
+            $rawSegments = $decoded;
+        } elseif ($form['date'] !== '' && $form['start_time'] !== '' && $form['end_time'] !== '') {
+            $rawSegments = [[
+                'date' => $form['date'],
+                'start_time' => $form['start_time'],
+                'end_time' => $form['end_time'],
+                'memo' => $form['memo'],
+                'is_active' => $form['is_active'],
+            ]];
+        }
+
+        if ($rawSegments === []) {
+            $errors[] = '空き時間を選択してください。';
+            return [];
+        }
+
+        $segments = [];
+
+        foreach ($rawSegments as $index => $segment) {
+            if (!is_array($segment)) {
+                $errors[] = '空き枠データの形式が不正です。';
+                continue;
+            }
+
+            $date = trim((string) ($segment['date'] ?? ''));
+            $startTime = trim((string) ($segment['start_time'] ?? ''));
+            $endTime = trim((string) ($segment['end_time'] ?? ''));
+            $memo = trim((string) ($segment['memo'] ?? ''));
+            $isActive = (string) ($segment['is_active'] ?? '1') === '1' ? 1 : 0;
+
+            if ($date === '' || $startTime === '' || $endTime === '') {
+                $errors[] = ($index + 1) . '件目の空き枠で日時が不足しています。';
+                continue;
+            }
+
+            try {
+                $start = new DateTimeImmutable($date . ' ' . $startTime);
+                $end = new DateTimeImmutable($date . ' ' . $endTime);
+            } catch (\Throwable) {
+                $errors[] = ($index + 1) . '件目の日時形式が不正です。';
+                continue;
+            }
+
+            if ($end <= $start) {
+                $errors[] = ($index + 1) . '件目の終了時間は開始時間より後にしてください。';
+                continue;
+            }
+
+            $durationMinutes = (int) (($end->getTimestamp() - $start->getTimestamp()) / 60);
+
+            if ($durationMinutes < 30 || $durationMinutes % 30 !== 0) {
+                $errors[] = ($index + 1) . '件目の空き枠は 30 分単位で指定してください。';
+                continue;
+            }
+
+            $segments[] = [
+                'date' => $start->format('Y-m-d'),
+                'start_time' => $start->format('H:i'),
+                'end_time' => $end->format('H:i'),
+                'duration_minutes' => $durationMinutes,
+                'memo' => $memo,
+                'is_active' => $isActive,
+            ];
+        }
+
+        usort($segments, static function (array $left, array $right): int {
+            $leftKey = $left['date'] . ' ' . $left['start_time'];
+            $rightKey = $right['date'] . ' ' . $right['start_time'];
+            return strcmp($leftKey, $rightKey);
+        });
+
+        for ($index = 1, $count = count($segments); $index < $count; $index++) {
+            $previous = $segments[$index - 1];
+            $current = $segments[$index];
+
+            if ($previous['date'] !== $current['date']) {
+                continue;
+            }
+
+            if ($current['start_time'] < $previous['end_time']) {
+                $errors[] = '分割した空き枠どうしが重複しています。';
+                break;
+            }
+        }
+
+        return $segments;
     }
 
     private function resolveCalendarReferenceDate(null|string $rawDate): DateTimeImmutable

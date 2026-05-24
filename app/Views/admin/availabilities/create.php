@@ -318,81 +318,86 @@ foreach ($calendar['days'] as $day) {
 </div>
 
 <div id="selection-modal" class="fixed inset-0 z-50 hidden bg-slate-950/35 px-4 py-6">
-    <div class="mx-auto mt-auto max-w-2xl rounded-[2rem] bg-white p-6 shadow-2xl">
+    <div class="mx-auto mt-auto max-w-4xl rounded-[2rem] bg-white p-6 shadow-2xl">
         <div class="mb-5 flex items-start justify-between gap-4">
             <div>
-                <p class="text-sm uppercase tracking-[0.2em] text-brand">Save Selection</p>
-                <h2 class="mt-2 text-2xl font-semibold text-ink">選択した空き枠を保存</h2>
-                <p id="selection-summary" class="mt-3 text-sm leading-6 text-slate-500">日時を選択するとここに表示します。</p>
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">Range Editor</p>
+                <h2 class="mt-2 text-2xl font-semibold text-ink">空き時間を分割して保存</h2>
+                <p id="selection-summary" class="mt-3 text-sm leading-6 text-slate-500">まず大きな空き時間を選び、その後で自由に区切ります。</p>
             </div>
             <button type="button" id="selection-modal-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
         </div>
 
-        <form action="/admin/availability-slots" method="POST" id="selection-form" class="grid gap-5 md:grid-cols-2">
+        <form action="/admin/availability-slots" method="POST" id="selection-form" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <?= csrf_field() ?>
             <input type="hidden" name="date" id="selection-date" value="<?= e($form['date'] ?? '') ?>">
             <input type="hidden" name="start_time" id="selection-start-time" value="<?= e($form['start_time'] ?? '') ?>">
             <input type="hidden" name="end_time" id="selection-end-time" value="<?= e($form['end_time'] ?? '') ?>">
             <input type="hidden" name="duration_minutes" id="selection-duration" value="<?= e($selectedDuration) ?>">
+            <input type="hidden" name="segments_json" id="selection-segments-json" value="<?= e($form['segments_json'] ?? '') ?>">
 
-            <div class="md:col-span-2 rounded-3xl bg-slate-50 p-4">
-                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Slot</p>
-                <p id="selection-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
-            </div>
+            <div class="space-y-5">
+                <div class="rounded-3xl bg-slate-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Step 1</p>
+                    <p id="selection-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
+                    <p class="mt-2 text-sm text-slate-500">ここで選択した大きな空き時間全体を確認します。</p>
+                </div>
 
-            <div class="md:col-span-2">
-                <label class="mb-3 block text-sm font-medium text-slate-700">作成方法</label>
-                <div class="grid gap-3 md:grid-cols-3">
-                    <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
-                        <input type="radio" name="recurrence_type" value="single" <?= checked(($form['recurrence_type'] ?? 'single') === 'single') ?> class="sr-only peer">
-                        <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">1回だけ</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">この時間だけ保存します。</p>
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Step 2</p>
+                            <h3 class="mt-2 text-lg font-semibold text-ink">区切りを設定</h3>
                         </div>
-                    </label>
-                    <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
-                        <input type="radio" name="recurrence_type" value="weekly" <?= checked(($form['recurrence_type'] ?? 'single') === 'weekly') ?> class="sr-only peer">
-                        <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">毎週</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ曜日・同時刻で繰り返します。</p>
-                        </div>
-                    </label>
-                    <label class="rounded-3xl border border-slate-200 p-4 transition hover:border-brand">
-                        <input type="radio" name="recurrence_type" value="monthly" <?= checked(($form['recurrence_type'] ?? 'single') === 'monthly') ?> class="sr-only peer">
-                        <div class="rounded-2xl border border-transparent p-2 peer-checked:border-brand peer-checked:bg-mist">
-                            <p class="text-sm font-semibold text-ink">毎月</p>
-                            <p class="mt-1 text-xs leading-5 text-slate-500">同じ日付・同時刻で繰り返します。</p>
-                        </div>
-                    </label>
+                        <button type="button" id="reset-splits" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">区切りをリセット</button>
+                    </div>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">下の境界ボタンを押すと、その位置で区切ります。もう一度押すと結合します。</p>
+                    <div id="segment-strip" class="mt-4 rounded-3xl bg-slate-50 p-4"></div>
+                    <div id="segment-divider-buttons" class="mt-3 flex flex-wrap gap-2"></div>
+                </div>
+
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Step 3</p>
+                    <h3 class="mt-2 text-lg font-semibold text-ink">各枠の内容を入力</h3>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">区切られた各枠ごとにメモと表示状態を個別設定できます。</p>
+                    <div id="segment-cards" class="mt-4 space-y-3"></div>
                 </div>
             </div>
 
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">作成回数</label>
-                <input type="number" name="recurrence_count" id="selection-recurrence-count" min="1" max="24" value="<?= e($form['recurrence_count'] ?? '1') ?>" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand" required>
-                <p class="mt-2 text-xs text-slate-500">毎週 / 毎月を選んだときだけ複数指定できます。</p>
-            </div>
-
-            <div>
-                <label class="mb-2 block text-sm font-medium text-slate-700">面談時間</label>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <span id="selection-duration-label" class="text-sm font-medium text-ink"><?= e($selectedDuration) ?>分</span>
+            <div class="space-y-5">
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <label class="mb-3 block text-sm font-medium text-slate-700">繰り返し設定</label>
+                    <div class="space-y-3">
+                        <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-3">
+                            <input type="radio" name="recurrence_type" value="single" <?= checked(($form['recurrence_type'] ?? 'single') === 'single') ?> class="mt-1">
+                            <span><span class="block font-semibold text-ink">1回だけ</span><span class="mt-1 block text-xs text-slate-500">選択した日だけ保存します。</span></span>
+                        </label>
+                        <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-3">
+                            <input type="radio" name="recurrence_type" value="weekly" <?= checked(($form['recurrence_type'] ?? 'single') === 'weekly') ?> class="mt-1">
+                            <span><span class="block font-semibold text-ink">毎週</span><span class="mt-1 block text-xs text-slate-500">同じ曜日と区切りで繰り返します。</span></span>
+                        </label>
+                        <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-3">
+                            <input type="radio" name="recurrence_type" value="monthly" <?= checked(($form['recurrence_type'] ?? 'single') === 'monthly') ?> class="mt-1">
+                            <span><span class="block font-semibold text-ink">毎月</span><span class="mt-1 block text-xs text-slate-500">同じ日付と区切りで繰り返します。</span></span>
+                        </label>
+                    </div>
                 </div>
-            </div>
 
-            <label class="inline-flex items-center gap-3 text-sm text-slate-700">
-                <input type="checkbox" name="is_active" value="1" <?= checked(($form['is_active'] ?? '1') === '1') ?> class="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand">
-                すぐ公開する
-            </label>
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <label class="mb-2 block text-sm font-medium text-slate-700">作成回数</label>
+                    <input type="number" name="recurrence_count" id="selection-recurrence-count" min="1" max="24" value="<?= e($form['recurrence_count'] ?? '1') ?>" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand" required>
+                    <p class="mt-2 text-xs text-slate-500">毎週 / 毎月を選んだときだけ複数指定できます。</p>
+                </div>
 
-            <div class="md:col-span-2">
-                <label class="mb-2 block text-sm font-medium text-slate-700">メモ</label>
-                <textarea name="memo" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-brand"><?= e($form['memo'] ?? '') ?></textarea>
-            </div>
+                <div class="rounded-3xl bg-slate-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Total Segments</p>
+                    <p id="segment-count-label" class="mt-2 text-2xl font-semibold text-ink">0</p>
+                </div>
 
-            <div class="md:col-span-2 flex flex-wrap justify-end gap-3">
-                <button type="button" id="selection-clear" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">選択をクリア</button>
-                <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">保存する</button>
+                <div class="flex flex-wrap justify-end gap-3">
+                    <button type="button" id="selection-clear" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">選択をクリア</button>
+                    <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">保存する</button>
+                </div>
             </div>
         </form>
     </div>
@@ -420,6 +425,32 @@ foreach ($calendar['days'] as $day) {
         color: white;
         background: rgba(255, 255, 255, 0.12);
     }
+
+    .segment-strip-grid {
+        display: grid;
+        gap: 6px;
+    }
+
+    .segment-strip-cell {
+        min-height: 68px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(37, 99, 235, 0.08));
+        border: 1px solid rgba(37, 99, 235, 0.15);
+        padding: 10px 8px;
+        text-align: center;
+        font-size: 11px;
+        color: #1e3a8a;
+    }
+
+    .segment-strip-cell[data-break-after="true"] {
+        box-shadow: inset -3px 0 0 rgba(15, 23, 42, 0.7);
+    }
+
+    .segment-divider-button[data-active="true"] {
+        background: #0f172a;
+        color: white;
+        border-color: #0f172a;
+    }
 </style>
 
 <script>
@@ -427,21 +458,28 @@ foreach ($calendar['days'] as $day) {
         const modal = document.getElementById('selection-modal');
         const closeButton = document.getElementById('selection-modal-close');
         const clearButton = document.getElementById('selection-clear');
+        const resetSplitsButton = document.getElementById('reset-splits');
         const selectionSummary = document.getElementById('selection-summary');
         const selectionSlotPill = document.getElementById('selection-slot-pill');
         const selectionDateInput = document.getElementById('selection-date');
         const selectionStartInput = document.getElementById('selection-start-time');
         const selectionEndInput = document.getElementById('selection-end-time');
         const selectionDurationInput = document.getElementById('selection-duration');
-        const selectionDurationLabel = document.getElementById('selection-duration-label');
+        const selectionSegmentsJsonInput = document.getElementById('selection-segments-json');
         const recurrenceCountInput = document.getElementById('selection-recurrence-count');
         const recurrenceInputs = Array.from(document.querySelectorAll('input[name="recurrence_type"]'));
         const cells = Array.from(document.querySelectorAll('.calendar-cell'));
         const mobileSlotButtons = Array.from(document.querySelectorAll('.mobile-slot-button'));
+        const segmentStrip = document.getElementById('segment-strip');
+        const dividerButtons = document.getElementById('segment-divider-buttons');
+        const segmentCards = document.getElementById('segment-cards');
+        const segmentCountLabel = document.getElementById('segment-count-label');
         const hasServerErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
 
         let dragState = null;
         let selection = null;
+        let splitPoints = new Set();
+        let segmentMeta = [];
 
         cells.forEach((cell) => {
             cell.addEventListener('pointerdown', (event) => {
@@ -450,11 +488,11 @@ foreach ($calendar['days'] as $day) {
                 }
 
                 dragState = {
-                    dayIndex: cell.dataset.dayIndex,
+                    dayIndex: Number(cell.dataset.dayIndex),
                     startIndex: Number(cell.dataset.slotIndex),
                 };
 
-                updateSelectionFromDrag(Number(cell.dataset.dayIndex), dragState.startIndex, dragState.startIndex);
+                updateSelectionFromDrag(dragState.dayIndex, dragState.startIndex, dragState.startIndex);
                 event.preventDefault();
             });
 
@@ -463,11 +501,11 @@ foreach ($calendar['days'] as $day) {
                     return;
                 }
 
-                if (cell.dataset.dayIndex !== dragState.dayIndex) {
+                if (Number(cell.dataset.dayIndex) !== dragState.dayIndex) {
                     return;
                 }
 
-                updateSelectionFromDrag(Number(cell.dataset.dayIndex), dragState.startIndex, Number(cell.dataset.slotIndex));
+                updateSelectionFromDrag(dragState.dayIndex, dragState.startIndex, Number(cell.dataset.slotIndex));
             });
         });
 
@@ -478,6 +516,8 @@ foreach ($calendar['days'] as $day) {
             }
 
             dragState = null;
+            resetSplits();
+            syncModalFields();
             openModal();
         });
 
@@ -485,6 +525,11 @@ foreach ($calendar['days'] as $day) {
         clearButton.addEventListener('click', () => {
             clearSelection();
             closeModal();
+        });
+
+        resetSplitsButton.addEventListener('click', () => {
+            resetSplits();
+            syncModalFields();
         });
 
         modal.addEventListener('click', (event) => {
@@ -500,14 +545,14 @@ foreach ($calendar['days'] as $day) {
         mobileSlotButtons.forEach((button) => {
             button.addEventListener('click', () => {
                 clearSelectionVisuals();
-                selection = null;
-                selectionDateInput.value = button.dataset.dayDate || '';
-                selectionStartInput.value = button.dataset.startTime || '';
-                selectionEndInput.value = button.dataset.endTime || '';
-                selectionDurationInput.value = button.dataset.duration || '30';
-                selectionDurationLabel.textContent = `${button.dataset.duration || '30'}分`;
-                selectionSlotPill.textContent = `${button.dataset.dayDate} ${button.dataset.startTime} - ${button.dataset.endTime}`;
-                selectionSummary.textContent = `${button.dataset.dayDate} の ${button.dataset.startTime} から ${button.dataset.endTime} までを新しい空き枠として保存します。`;
+                selection = {
+                    dayIndex: findDayIndex(button.dataset.dayDate || ''),
+                    startIndex: timeToSlotIndex(button.dataset.startTime || '00:00'),
+                    endIndex: timeToSlotIndex(button.dataset.endTime || '00:30') - 1,
+                    date: button.dataset.dayDate || '',
+                };
+                resetSplits();
+                syncModalFields();
                 openModal();
             });
         });
@@ -516,19 +561,39 @@ foreach ($calendar['days'] as $day) {
         hydrateSelectionFromForm();
 
         function updateSelectionFromDrag(dayIndex, anchorIndex, hoveredIndex) {
-            const offset = hoveredIndex - anchorIndex;
-            const limitedOffset = Math.sign(offset) * Math.min(Math.abs(offset), 1);
-            const normalizedStart = Math.min(anchorIndex, anchorIndex + limitedOffset);
-            const normalizedEnd = Math.max(anchorIndex, anchorIndex + limitedOffset);
+            const reachableEnd = getReachableEndIndex(dayIndex, anchorIndex, hoveredIndex);
+            const normalizedStart = Math.min(anchorIndex, reachableEnd);
+            const normalizedEnd = Math.max(anchorIndex, reachableEnd);
+            const dayDate = cells.find((cell) =>
+                Number(cell.dataset.dayIndex) === dayIndex && Number(cell.dataset.slotIndex) === normalizedStart
+            )?.dataset.dayDate || '';
 
             selection = {
                 dayIndex,
                 startIndex: normalizedStart,
                 endIndex: normalizedEnd,
+                date: dayDate,
             };
 
             paintSelection();
-            syncModalFields();
+        }
+
+        function getReachableEndIndex(dayIndex, startIndex, hoveredIndex) {
+            const direction = hoveredIndex >= startIndex ? 1 : -1;
+            let current = startIndex;
+
+            while (current !== hoveredIndex) {
+                const next = current + direction;
+                const nextCell = getCell(dayIndex, next);
+
+                if (!nextCell || nextCell.dataset.selectable !== 'true') {
+                    break;
+                }
+
+                current = next;
+            }
+
+            return current;
         }
 
         function paintSelection() {
@@ -542,35 +607,192 @@ foreach ($calendar['days'] as $day) {
             });
         }
 
+        function resetSplits() {
+            splitPoints = new Set();
+            segmentMeta = [];
+        }
+
         function syncModalFields() {
             if (!selection) {
                 return;
             }
 
-            const selectedCells = cells.filter((cell) =>
-                Number(cell.dataset.dayIndex) === selection.dayIndex
-                && Number(cell.dataset.slotIndex) >= selection.startIndex
-                && Number(cell.dataset.slotIndex) <= selection.endIndex
-            );
-
-            if (selectedCells.length === 0) {
-                return;
-            }
-
-            const firstCell = selectedCells[0];
-            const lastCell = selectedCells[selectedCells.length - 1];
-            const date = firstCell.dataset.dayDate;
-            const startTime = firstCell.dataset.startTime;
+            const date = selection.date;
+            const startTime = slotIndexToTime(selection.startIndex);
             const endTime = slotIndexToTime(selection.endIndex + 1);
-            const duration = selectedCells.length * <?= e((string) $slotStepMinutes) ?>;
+            const duration = (selection.endIndex - selection.startIndex + 1) * <?= e((string) $slotStepMinutes) ?>;
 
             selectionDateInput.value = date;
             selectionStartInput.value = startTime;
             selectionEndInput.value = endTime;
             selectionDurationInput.value = String(duration);
-            selectionDurationLabel.textContent = `${duration}分`;
             selectionSlotPill.textContent = `${date} ${startTime} - ${endTime}`;
-            selectionSummary.textContent = `${date} の ${startTime} から ${endTime} までを新しい空き枠として保存します。`;
+            selectionSummary.textContent = `${date} の大きな空き時間を選択しました。次に区切り位置を決めて、各枠の内容を調整してください。`;
+
+            renderSegmentEditor();
+        }
+
+        function renderSegmentEditor() {
+            if (!selection) {
+                return;
+            }
+
+            const totalSlots = selection.endIndex - selection.startIndex + 1;
+            const segments = buildSegments();
+            segmentCountLabel.textContent = String(segments.length);
+
+            segmentStrip.innerHTML = '';
+            const stripGrid = document.createElement('div');
+            stripGrid.className = 'segment-strip-grid';
+            stripGrid.style.gridTemplateColumns = `repeat(${totalSlots}, minmax(0, 1fr))`;
+
+            for (let offset = 0; offset < totalSlots; offset++) {
+                const absoluteIndex = selection.startIndex + offset;
+                const cell = document.createElement('div');
+                cell.className = 'segment-strip-cell';
+                cell.dataset.breakAfter = splitPoints.has(offset + 1) ? 'true' : 'false';
+                cell.innerHTML = `<span class="block font-semibold">${slotIndexToTime(absoluteIndex)}</span><span class="mt-1 block text-[10px]">${slotIndexToTime(absoluteIndex + 1)}</span>`;
+                stripGrid.appendChild(cell);
+            }
+
+            segmentStrip.appendChild(stripGrid);
+            renderDividerButtons(totalSlots);
+            renderSegmentCards(segments);
+            syncSegmentsJson(segments);
+        }
+
+        function renderDividerButtons(totalSlots) {
+            dividerButtons.innerHTML = '';
+
+            if (totalSlots <= 1) {
+                const message = document.createElement('p');
+                message.className = 'text-xs text-slate-500';
+                message.textContent = '30分枠なので、これ以上の分割はありません。';
+                dividerButtons.appendChild(message);
+                return;
+            }
+
+            for (let position = 1; position < totalSlots; position++) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'segment-divider-button rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100';
+                button.dataset.active = splitPoints.has(position) ? 'true' : 'false';
+                button.textContent = `${slotIndexToTime(selection.startIndex + position)} で区切る`;
+                button.addEventListener('click', () => {
+                    if (splitPoints.has(position)) {
+                        splitPoints.delete(position);
+                    } else {
+                        splitPoints.add(position);
+                    }
+                    renderSegmentEditor();
+                });
+                dividerButtons.appendChild(button);
+            }
+        }
+
+        function buildSegments() {
+            if (!selection) {
+                return [];
+            }
+
+            const totalSlots = selection.endIndex - selection.startIndex + 1;
+            const sortedBreaks = Array.from(splitPoints).sort((left, right) => left - right);
+            const boundaries = [0, ...sortedBreaks, totalSlots];
+            const nextMeta = [];
+
+            for (let index = 0; index < boundaries.length - 1; index++) {
+                const startOffset = boundaries[index];
+                const endOffset = boundaries[index + 1];
+                const startIndex = selection.startIndex + startOffset;
+                const endIndexExclusive = selection.startIndex + endOffset;
+                const defaultMeta = segmentMeta[index] ?? { memo: '', is_active: true };
+
+                nextMeta.push({
+                    memo: defaultMeta.memo ?? '',
+                    is_active: defaultMeta.is_active !== false,
+                });
+            }
+
+            segmentMeta = nextMeta;
+
+            return boundaries.slice(0, -1).map((startOffset, index) => {
+                const endOffset = boundaries[index + 1];
+                const startIndex = selection.startIndex + startOffset;
+                const endIndexExclusive = selection.startIndex + endOffset;
+                const duration = (endOffset - startOffset) * <?= e((string) $slotStepMinutes) ?>;
+
+                return {
+                    index,
+                    date: selection.date,
+                    start_time: slotIndexToTime(startIndex),
+                    end_time: slotIndexToTime(endIndexExclusive),
+                    duration_minutes: duration,
+                    memo: segmentMeta[index]?.memo ?? '',
+                    is_active: segmentMeta[index]?.is_active !== false,
+                };
+            });
+        }
+
+        function renderSegmentCards(segments) {
+            segmentCards.innerHTML = '';
+
+            if (segments.length === 0) {
+                return;
+            }
+
+            segments.forEach((segment) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'rounded-3xl border border-slate-100 p-4';
+                wrapper.innerHTML = `
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <p class="text-sm font-semibold text-ink">枠 ${segment.index + 1}: ${segment.start_time} - ${segment.end_time}</p>
+                            <p class="mt-1 text-xs text-slate-500">${segment.duration_minutes}分</p>
+                        </div>
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                            <input type="checkbox" data-segment-active="${segment.index}" ${segment.is_active ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-brand">
+                            公開する
+                        </label>
+                    </div>
+                    <div class="mt-3">
+                        <label class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Memo</label>
+                        <textarea data-segment-memo="${segment.index}" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand">${escapeHtml(segment.memo)}</textarea>
+                    </div>
+                `;
+                segmentCards.appendChild(wrapper);
+            });
+
+            segmentCards.querySelectorAll('[data-segment-memo]').forEach((textarea) => {
+                textarea.addEventListener('input', (event) => {
+                    const index = Number(event.target.dataset.segmentMemo);
+                    segmentMeta[index] = {
+                        ...(segmentMeta[index] ?? { is_active: true, memo: '' }),
+                        memo: event.target.value,
+                    };
+                    syncSegmentsJson(buildSegments());
+                });
+            });
+
+            segmentCards.querySelectorAll('[data-segment-active]').forEach((checkbox) => {
+                checkbox.addEventListener('change', (event) => {
+                    const index = Number(event.target.dataset.segmentActive);
+                    segmentMeta[index] = {
+                        ...(segmentMeta[index] ?? { is_active: true, memo: '' }),
+                        is_active: event.target.checked,
+                    };
+                    syncSegmentsJson(buildSegments());
+                });
+            });
+        }
+
+        function syncSegmentsJson(segments) {
+            selectionSegmentsJsonInput.value = JSON.stringify(segments.map((segment) => ({
+                date: segment.date,
+                start_time: segment.start_time,
+                end_time: segment.end_time,
+                memo: segment.memo,
+                is_active: segment.is_active ? '1' : '0',
+            })));
         }
 
         function slotIndexToTime(slotIndex) {
@@ -578,6 +800,22 @@ foreach ($calendar['days'] as $day) {
             const hour = String(Math.floor(minutes / 60)).padStart(2, '0');
             const minute = String(minutes % 60).padStart(2, '0');
             return `${hour}:${minute}`;
+        }
+
+        function timeToSlotIndex(time) {
+            const [hour, minute] = time.split(':').map(Number);
+            return (((hour * 60) + minute) - (<?= e((string) $timeStartHour) ?> * 60)) / <?= e((string) $slotStepMinutes) ?>;
+        }
+
+        function findDayIndex(date) {
+            const cell = cells.find((item) => item.dataset.dayDate === date);
+            return cell ? Number(cell.dataset.dayIndex) : 0;
+        }
+
+        function getCell(dayIndex, slotIndex) {
+            return cells.find((cell) =>
+                Number(cell.dataset.dayIndex) === dayIndex && Number(cell.dataset.slotIndex) === slotIndex
+            ) || null;
         }
 
         function openModal() {
@@ -592,13 +830,19 @@ foreach ($calendar['days'] as $day) {
 
         function clearSelection() {
             selection = null;
+            splitPoints = new Set();
+            segmentMeta = [];
             selectionDateInput.value = '';
             selectionStartInput.value = '';
             selectionEndInput.value = '';
             selectionDurationInput.value = '30';
-            selectionDurationLabel.textContent = '30分';
+            selectionSegmentsJsonInput.value = '';
             selectionSlotPill.textContent = '未選択';
-            selectionSummary.textContent = '日時を選択するとここに表示します。';
+            selectionSummary.textContent = 'まず大きな空き時間を選び、その後で自由に区切ります。';
+            segmentStrip.innerHTML = '';
+            dividerButtons.innerHTML = '';
+            segmentCards.innerHTML = '';
+            segmentCountLabel.textContent = '0';
             clearSelectionVisuals();
         }
 
@@ -625,24 +869,49 @@ foreach ($calendar['days'] as $day) {
                 return;
             }
 
-            const matchingStartCell = cells.find((cell) =>
-                cell.dataset.dayDate === selectionDateInput.value
-                && cell.dataset.startTime === selectionStartInput.value
-            );
-
-            if (!matchingStartCell) {
-                return;
-            }
-
-            const startIndex = Number(matchingStartCell.dataset.slotIndex);
+            const dayIndex = findDayIndex(selectionDateInput.value);
+            const startIndex = timeToSlotIndex(selectionStartInput.value);
             const endIndex = timeToSlotIndex(selectionEndInput.value) - 1;
+
             selection = {
-                dayIndex: Number(matchingStartCell.dataset.dayIndex),
+                dayIndex,
                 startIndex,
-                endIndex: Math.max(startIndex, endIndex),
+                endIndex,
+                date: selectionDateInput.value,
             };
 
             paintSelection();
+
+            if (selectionSegmentsJsonInput.value) {
+                try {
+                    const decoded = JSON.parse(selectionSegmentsJsonInput.value);
+                    const boundaries = [];
+                    segmentMeta = [];
+
+                    decoded.forEach((segment, index) => {
+                        segmentMeta.push({
+                            memo: String(segment.memo ?? ''),
+                            is_active: String(segment.is_active ?? '1') === '1',
+                        });
+
+                        if (index === 0) {
+                            return;
+                        }
+
+                        const splitOffset = timeToSlotIndex(segment.start_time) - startIndex;
+                        if (splitOffset > 0) {
+                            boundaries.push(splitOffset);
+                        }
+                    });
+
+                    splitPoints = new Set(boundaries);
+                } catch (_error) {
+                    resetSplits();
+                }
+            } else {
+                resetSplits();
+            }
+
             syncModalFields();
 
             if (hasServerErrors) {
@@ -650,9 +919,13 @@ foreach ($calendar['days'] as $day) {
             }
         }
 
-        function timeToSlotIndex(time) {
-            const [hour, minute] = time.split(':').map(Number);
-            return (((hour * 60) + minute) - (<?= e((string) $timeStartHour) ?> * 60)) / <?= e((string) $slotStepMinutes) ?>;
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
         }
     })();
 </script>
