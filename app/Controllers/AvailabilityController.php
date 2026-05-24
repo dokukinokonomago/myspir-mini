@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Database;
 use App\Core\Session;
 use DateTimeImmutable;
+use PDO;
 
 class AvailabilityController
 {
@@ -39,6 +40,8 @@ class AvailabilityController
                 'start_time' => '',
                 'end_time' => '',
                 'duration_minutes' => '30',
+                'recurrence_type' => 'single',
+                'recurrence_count' => '1',
                 'is_active' => '1',
                 'memo' => '',
             ],
@@ -52,6 +55,8 @@ class AvailabilityController
             'start_time' => trim((string) ($_POST['start_time'] ?? '')),
             'end_time' => trim((string) ($_POST['end_time'] ?? '')),
             'duration_minutes' => trim((string) ($_POST['duration_minutes'] ?? '30')),
+            'recurrence_type' => trim((string) ($_POST['recurrence_type'] ?? 'single')),
+            'recurrence_count' => trim((string) ($_POST['recurrence_count'] ?? '1')),
             'is_active' => isset($_POST['is_active']) ? '1' : '0',
             'memo' => trim((string) ($_POST['memo'] ?? '')),
         ];
@@ -66,6 +71,20 @@ class AvailabilityController
             $errors[] = '面談時間は 30 分または 60 分を選択してください。';
         }
 
+        if (!in_array($form['recurrence_type'], ['single', 'weekly', 'monthly'], true)) {
+            $errors[] = '繰り返し設定が不正です。';
+        }
+
+        if ($form['recurrence_type'] === 'single') {
+            $form['recurrence_count'] = '1';
+        }
+
+        $recurrenceCount = (int) $form['recurrence_count'];
+
+        if ($recurrenceCount < 1 || $recurrenceCount > 24) {
+            $errors[] = '作成回数は 1 回から 24 回で指定してください。';
+        }
+
         $start = null;
         $end = null;
 
@@ -78,22 +97,34 @@ class AvailabilityController
             }
         }
 
-        if (!$errors) {
-            $conflict = Database::connection()->prepare(
-                "SELECT id
-                 FROM bookings
-                 WHERE status = 'confirmed'
-                   AND booked_start_datetime < :end
-                   AND booked_end_datetime > :start
-                 LIMIT 1"
-            );
-            $conflict->execute([
-                'start' => $start->format('Y-m-d H:i:s'),
-                'end' => $end->format('Y-m-d H:i:s'),
-            ]);
+        $slotsToCreate = [];
 
-            if ($conflict->fetch()) {
-                $errors[] = 'この時間帯には既存予約があるため、空き枠を追加できません。';
+        if (!$errors && $start && $end) {
+            $pdo = Database::connection();
+
+            for ($index = 0; $index < $recurrenceCount; $index++) {
+                $occurrenceStart = $this->shiftDateTime($start, $form['recurrence_type'], $index);
+                $occurrenceEnd = $this->shiftDateTime($end, $form['recurrence_type'], $index);
+
+                if ($occurrenceEnd <= $occurrenceStart) {
+                    $errors[] = '繰り返し後の終了日時が不正です。';
+                    break;
+                }
+
+                $conflictMessage = $this->findConflictMessage($pdo, $occurrenceStart, $occurrenceEnd);
+
+                if ($conflictMessage !== null) {
+                    $errors[] = $conflictMessage;
+                } else {
+                    $slotsToCreate[] = [
+                        'start_datetime' => $occurrenceStart->format('Y-m-d H:i:s'),
+                        'end_datetime' => $occurrenceEnd->format('Y-m-d H:i:s'),
+                    ];
+                }
+            }
+
+            if ($this->hasInternalOverlap($slotsToCreate)) {
+                $errors[] = '指定した繰り返し設定だと、作成候補どうしが重複します。';
             }
         }
 
@@ -107,20 +138,35 @@ class AvailabilityController
             return;
         }
 
-        $statement = Database::connection()->prepare(
-            'INSERT INTO availability_slots (start_datetime, end_datetime, duration_minutes, is_active, memo, created_at, updated_at)
-             VALUES (:start_datetime, :end_datetime, :duration_minutes, :is_active, :memo, NOW(), NOW())'
-        );
+        $pdo = Database::connection();
+        $pdo->beginTransaction();
 
-        $statement->execute([
-            'start_datetime' => $start?->format('Y-m-d H:i:s'),
-            'end_datetime' => $end?->format('Y-m-d H:i:s'),
-            'duration_minutes' => (int) $form['duration_minutes'],
-            'is_active' => (int) $form['is_active'],
-            'memo' => $form['memo'] ?: null,
-        ]);
+        try {
+            $statement = $pdo->prepare(
+                'INSERT INTO availability_slots (start_datetime, end_datetime, duration_minutes, is_active, memo, created_at, updated_at)
+                 VALUES (:start_datetime, :end_datetime, :duration_minutes, :is_active, :memo, NOW(), NOW())'
+            );
 
-        Session::flash('success', '空き枠を追加しました。');
+            foreach ($slotsToCreate as $slot) {
+                $statement->execute([
+                    'start_datetime' => $slot['start_datetime'],
+                    'end_datetime' => $slot['end_datetime'],
+                    'duration_minutes' => (int) $form['duration_minutes'],
+                    'is_active' => (int) $form['is_active'],
+                    'memo' => $form['memo'] ?: null,
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $exception;
+        }
+
+        $createdCount = count($slotsToCreate);
+        Session::flash('success', $createdCount . '件の空き枠を追加しました。');
         redirect('/admin/availability-slots');
     }
 
@@ -134,5 +180,87 @@ class AvailabilityController
         Session::flash('success', '空き枠の表示状態を更新しました。');
         redirect('/admin/availability-slots');
     }
-}
 
+    private function shiftDateTime(DateTimeImmutable $dateTime, string $recurrenceType, int $offset): DateTimeImmutable
+    {
+        if ($offset === 0 || $recurrenceType === 'single') {
+            return $dateTime;
+        }
+
+        if ($recurrenceType === 'weekly') {
+            return $dateTime->modify('+' . $offset . ' week');
+        }
+
+        $year = (int) $dateTime->format('Y');
+        $month = (int) $dateTime->format('n');
+        $day = (int) $dateTime->format('j');
+        $hour = (int) $dateTime->format('H');
+        $minute = (int) $dateTime->format('i');
+        $second = (int) $dateTime->format('s');
+
+        $targetMonth = $month + $offset;
+        $targetYear = $year + intdiv($targetMonth - 1, 12);
+        $targetMonth = (($targetMonth - 1) % 12) + 1;
+        $lastDay = (int) (new DateTimeImmutable(sprintf('%04d-%02d-01 00:00:00', $targetYear, $targetMonth)))->format('t');
+        $targetDay = min($day, $lastDay);
+
+        return (new DateTimeImmutable())
+            ->setDate($targetYear, $targetMonth, $targetDay)
+            ->setTime($hour, $minute, $second);
+    }
+
+    private function findConflictMessage(PDO $pdo, DateTimeImmutable $start, DateTimeImmutable $end): ?string
+    {
+        $bookingConflict = $pdo->prepare(
+            "SELECT id
+             FROM bookings
+             WHERE status = 'confirmed'
+               AND booked_start_datetime < :end
+               AND booked_end_datetime > :start
+             LIMIT 1"
+        );
+        $bookingConflict->execute([
+            'start' => $start->format('Y-m-d H:i:s'),
+            'end' => $end->format('Y-m-d H:i:s'),
+        ]);
+
+        if ($bookingConflict->fetch()) {
+            return $start->format('Y/m/d H:i') . ' は既存予約と重なるため追加できません。';
+        }
+
+        $slotConflict = $pdo->prepare(
+            "SELECT id
+             FROM availability_slots
+             WHERE start_datetime < :end
+               AND end_datetime > :start
+             LIMIT 1"
+        );
+        $slotConflict->execute([
+            'start' => $start->format('Y-m-d H:i:s'),
+            'end' => $end->format('Y-m-d H:i:s'),
+        ]);
+
+        if ($slotConflict->fetch()) {
+            return $start->format('Y/m/d H:i') . ' は既存の空き枠と重なるため追加できません。';
+        }
+
+        return null;
+    }
+
+    private function hasInternalOverlap(array $slots): bool
+    {
+        usort($slots, static fn (array $left, array $right): int => strcmp($left['start_datetime'], $right['start_datetime']));
+
+        $previousEnd = null;
+
+        foreach ($slots as $slot) {
+            if ($previousEnd !== null && $slot['start_datetime'] < $previousEnd) {
+                return true;
+            }
+
+            $previousEnd = $slot['end_datetime'];
+        }
+
+        return false;
+    }
+}
