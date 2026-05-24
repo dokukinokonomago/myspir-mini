@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
 
+$pageContainerClass = 'max-w-[1700px]';
 $timeStartHour = (int) $calendar['time_start_hour'];
 $timeEndHour = (int) $calendar['time_end_hour'];
 $slotStepMinutes = (int) $calendar['slot_step_minutes'];
 $slotCount = (int) ((($timeEndHour - $timeStartHour) * 60) / $slotStepMinutes);
 $cellHeight = 34;
 $weekdayMap = ['Mon' => '月', 'Tue' => '火', 'Wed' => '水', 'Thu' => '木', 'Fri' => '金', 'Sat' => '土', 'Sun' => '日'];
+$now = new DateTimeImmutable();
 
 $timeLabels = [];
 for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++) {
@@ -34,6 +36,35 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
         - (((int) substr($form['start_time'], 0, 2) * 60) + ((int) substr($form['start_time'], 3, 2)))
     );
 }
+
+$mobileAvailableByDay = [];
+foreach ($calendar['days'] as $day) {
+    $daySlots = [];
+
+    for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++) {
+        $timeLabel = $timeLabels[$slotIndex];
+        $slotDateTime = new DateTimeImmutable($day['date'] . ' ' . $timeLabel . ':00');
+        $status = $occupiedCells[$day['index']][$slotIndex] ?? 'free';
+
+        if ($slotDateTime < $now || $status !== 'free') {
+            continue;
+        }
+
+        $canFitSixty = ($slotIndex + 1) < $slotCount
+            && (($occupiedCells[$day['index']][$slotIndex + 1] ?? 'free') === 'free')
+            && (new DateTimeImmutable($day['date'] . ' ' . $timeLabels[$slotIndex + 1] . ':00')) >= $now;
+
+        $daySlots[] = [
+            'slot_index' => $slotIndex,
+            'start_time' => $timeLabel,
+            'end_time_30' => $timeLabels[$slotIndex + 1] ?? sprintf('%02d:%02d', $timeEndHour, 0),
+            'end_time_60' => $timeLabels[$slotIndex + 2] ?? sprintf('%02d:%02d', $timeEndHour, 0),
+            'can_fit_sixty' => $canFitSixty && isset($timeLabels[$slotIndex + 2]),
+        ];
+    }
+
+    $mobileAvailableByDay[$day['date']] = $daySlots;
+}
 ?>
 
 <div class="space-y-6">
@@ -57,8 +88,8 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
         </div>
     <?php endif; ?>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section class="rounded-[2rem] border border-line bg-white p-5 shadow-sm">
+    <div class="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section class="rounded-[2rem] border border-line bg-white p-4 shadow-sm md:p-5 xl:p-6">
             <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-500">対象週</p>
@@ -70,6 +101,13 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
                     <a href="/admin/availability-slots/create?week=<?= e($calendar['prev_week']) ?>" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100">前の週</a>
                     <a href="/admin/availability-slots/create?week=<?= e($calendar['next_week']) ?>" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100">次の週</a>
                 </div>
+            </div>
+
+            <div class="mb-5 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-4 lg:hidden">
+                <p class="text-sm font-semibold text-ink">スマホ操作モード</p>
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    日付を選んで、空いている開始時刻をタップしてください。`30分` または `60分` をその場で選べます。
+                </p>
             </div>
 
             <div class="mb-5 grid gap-3 md:grid-cols-3">
@@ -94,7 +132,65 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
                 <span class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2"><span class="h-2.5 w-2.5 rounded-full bg-ink"></span>新規選択中</span>
             </div>
 
-            <div class="overflow-auto rounded-[1.75rem] border border-slate-200">
+            <div class="mb-6 lg:hidden">
+                <div class="space-y-4">
+                    <?php foreach ($calendar['days'] as $day): ?>
+                        <?php $mobileSlots = $mobileAvailableByDay[$day['date']] ?? []; ?>
+                        <section class="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm <?= $day['is_today'] ? 'ring-2 ring-blue-100' : '' ?>">
+                            <div class="mb-4 flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400"><?= e($weekdayMap[$day['weekday_short']] ?? $day['weekday_short']) ?></p>
+                                    <h3 class="mt-2 text-lg font-semibold text-ink"><?= e($day['label']) ?></h3>
+                                </div>
+                                <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500"><?= $day['is_today'] ? 'Today' : 'Day' ?></span>
+                            </div>
+
+                            <?php if (!$mobileSlots): ?>
+                                <p class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">この日は新規作成できる空き時間がありません。</p>
+                            <?php else: ?>
+                                <div class="space-y-3">
+                                    <?php foreach ($mobileSlots as $slot): ?>
+                                        <div class="rounded-3xl border border-slate-100 px-4 py-4">
+                                            <div class="mb-3 flex items-center justify-between">
+                                                <p class="text-base font-semibold text-ink"><?= e($slot['start_time']) ?> 開始</p>
+                                                <span class="rounded-full bg-mist px-3 py-1 text-xs font-medium text-brand">Tap</span>
+                                            </div>
+                                            <div class="grid gap-2 sm:grid-cols-2">
+                                                <button
+                                                    type="button"
+                                                    class="mobile-slot-button rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:border-brand hover:bg-mist"
+                                                    data-day-date="<?= e($day['date']) ?>"
+                                                    data-start-time="<?= e($slot['start_time']) ?>"
+                                                    data-end-time="<?= e($slot['end_time_30']) ?>"
+                                                    data-duration="30"
+                                                >
+                                                    <span class="block font-semibold text-ink">30分で作成</span>
+                                                    <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_30']) ?></span>
+                                                </button>
+                                                <?php if ($slot['can_fit_sixty']): ?>
+                                                    <button
+                                                        type="button"
+                                                        class="mobile-slot-button rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm transition hover:border-brand hover:bg-mist"
+                                                        data-day-date="<?= e($day['date']) ?>"
+                                                        data-start-time="<?= e($slot['start_time']) ?>"
+                                                        data-end-time="<?= e($slot['end_time_60']) ?>"
+                                                        data-duration="60"
+                                                    >
+                                                        <span class="block font-semibold text-ink">60分で作成</span>
+                                                        <span class="mt-1 block text-xs text-slate-500"><?= e($slot['start_time']) ?> - <?= e($slot['end_time_60']) ?></span>
+                                                    </button>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </section>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="hidden overflow-auto rounded-[1.75rem] border border-slate-200 lg:block">
                 <div class="min-w-[980px] bg-white">
                     <div class="grid border-b border-slate-200 bg-slate-50" style="grid-template-columns: 72px repeat(7, minmax(0, 1fr));">
                         <div class="border-r border-slate-200 px-3 py-4 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Time</div>
@@ -183,14 +279,14 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
             </div>
         </section>
 
-        <aside class="space-y-4">
+        <aside class="space-y-4 2xl:sticky 2xl:top-6 2xl:self-start">
             <div class="rounded-[2rem] border border-line bg-white p-6 shadow-sm">
-                <p class="text-sm uppercase tracking-[0.2em] text-brand">How To Use</p>
-                <h2 class="mt-2 text-xl font-semibold text-ink">使い方</h2>
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">Device Modes</p>
+                <h2 class="mt-2 text-xl font-semibold text-ink">PC / スマホ両対応</h2>
                 <ol class="mt-4 space-y-3 text-sm leading-6 text-slate-500">
-                    <li>1. 空いているマスを 1 コマまたは 2 コマ分なぞる</li>
-                    <li>2. 自動で開くモーダルで繰り返し設定やメモを入れる</li>
-                    <li>3. 保存すると、その週のカレンダー上に即時反映される</li>
+                    <li>1. PC は大きな週カレンダー上でドラッグ選択</li>
+                    <li>2. スマホは日別カードから開始時刻をタップ選択</li>
+                    <li>3. 保存モーダルは共通で、繰り返し設定も同じ導線です</li>
                 </ol>
             </div>
 
@@ -341,6 +437,7 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
         const recurrenceCountInput = document.getElementById('selection-recurrence-count');
         const recurrenceInputs = Array.from(document.querySelectorAll('input[name="recurrence_type"]'));
         const cells = Array.from(document.querySelectorAll('.calendar-cell'));
+        const mobileSlotButtons = Array.from(document.querySelectorAll('.mobile-slot-button'));
         const hasServerErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
 
         let dragState = null;
@@ -398,6 +495,21 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
 
         recurrenceInputs.forEach((input) => {
             input.addEventListener('change', syncRecurrenceControls);
+        });
+
+        mobileSlotButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                clearSelectionVisuals();
+                selection = null;
+                selectionDateInput.value = button.dataset.dayDate || '';
+                selectionStartInput.value = button.dataset.startTime || '';
+                selectionEndInput.value = button.dataset.endTime || '';
+                selectionDurationInput.value = button.dataset.duration || '30';
+                selectionDurationLabel.textContent = `${button.dataset.duration || '30'}分`;
+                selectionSlotPill.textContent = `${button.dataset.dayDate} ${button.dataset.startTime} - ${button.dataset.endTime}`;
+                selectionSummary.textContent = `${button.dataset.dayDate} の ${button.dataset.startTime} から ${button.dataset.endTime} までを新しい空き枠として保存します。`;
+                openModal();
+            });
         });
 
         syncRecurrenceControls();
@@ -487,6 +599,10 @@ if (!empty($form['start_time']) && !empty($form['end_time'])) {
             selectionDurationLabel.textContent = '30分';
             selectionSlotPill.textContent = '未選択';
             selectionSummary.textContent = '日時を選択するとここに表示します。';
+            clearSelectionVisuals();
+        }
+
+        function clearSelectionVisuals() {
             cells.forEach((cell) => cell.classList.remove('is-selected'));
         }
 
