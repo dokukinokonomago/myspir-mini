@@ -373,8 +373,8 @@ foreach ($calendar['days'] as $day) {
     </div>
 </div>
 
-<div id="selection-modal" class="fixed inset-0 z-50 hidden bg-slate-950/35 px-4 py-6">
-    <div class="mx-auto mt-auto max-w-4xl rounded-[2rem] bg-white p-6 shadow-2xl">
+<div id="selection-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto my-6 max-h-[calc(100vh-3rem)] max-w-4xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
         <div class="mb-5 flex items-start justify-between gap-4">
             <div>
                 <p class="text-sm uppercase tracking-[0.2em] text-brand">Range Editor</p>
@@ -397,6 +397,16 @@ foreach ($calendar['days'] as $day) {
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Step 1</p>
                     <p id="selection-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
                     <p class="mt-2 text-sm text-slate-500">ここで選択した大きな空き時間全体を確認します。</p>
+                    <div class="mt-4 space-y-3">
+                        <div>
+                            <label for="selection-shared-memo" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Selected Range Content</label>
+                            <textarea id="selection-shared-memo" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="この選択範囲の内容を入力します。必要なら下のボタンで各分割枠へまとめて反映できます。"></textarea>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button type="button" id="apply-shared-memo" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">各枠へまとめて反映</button>
+                            <p class="text-xs text-slate-500">最初にざっくり内容を書き、必要な枠だけ Step 3 で個別修正できます。</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="rounded-3xl border border-slate-200 p-4">
@@ -459,8 +469,8 @@ foreach ($calendar['days'] as $day) {
     </div>
 </div>
 
-<div id="delete-modal" class="fixed inset-0 z-50 hidden bg-slate-950/35 px-4 py-6">
-    <div class="mx-auto mt-auto max-w-xl rounded-[2rem] bg-white p-6 shadow-2xl">
+<div id="delete-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto my-6 max-h-[calc(100vh-3rem)] max-w-xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
         <div class="mb-5 flex items-start justify-between gap-4">
             <div>
                 <p class="text-sm uppercase tracking-[0.2em] text-rose-500">Delete Range</p>
@@ -585,6 +595,8 @@ foreach ($calendar['days'] as $day) {
         const selectionEndInput = document.getElementById('selection-end-time');
         const selectionDurationInput = document.getElementById('selection-duration');
         const selectionSegmentsJsonInput = document.getElementById('selection-segments-json');
+        const sharedMemoInput = document.getElementById('selection-shared-memo');
+        const applySharedMemoButton = document.getElementById('apply-shared-memo');
         const recurrenceCountInput = document.getElementById('selection-recurrence-count');
         const recurrenceInputs = Array.from(document.querySelectorAll('input[name="recurrence_type"]'));
         const cells = Array.from(document.querySelectorAll('.calendar-cell'));
@@ -605,6 +617,7 @@ foreach ($calendar['days'] as $day) {
         let selection = null;
         let splitPoints = new Set();
         let segmentMeta = [];
+        let sharedMemo = '';
         let plannerMode = 'create';
 
         cells.forEach((cell) => {
@@ -670,6 +683,33 @@ foreach ($calendar['days'] as $day) {
         resetSplitsButton.addEventListener('click', () => {
             resetSplits();
             syncModalFields();
+        });
+
+        applySharedMemoButton.addEventListener('click', () => {
+            sharedMemo = sharedMemoInput.value;
+
+            if (!selection) {
+                return;
+            }
+
+            const segmentCount = buildSegments().length;
+            segmentMeta = Array.from({ length: segmentCount }, (_value, index) => ({
+                ...(segmentMeta[index] ?? { is_active: true, memo: '' }),
+                memo: sharedMemo,
+            }));
+            renderSegmentEditor();
+        });
+
+        sharedMemoInput.addEventListener('input', (event) => {
+            sharedMemo = event.target.value;
+
+            if (selection && buildSegments().length === 1) {
+                segmentMeta[0] = {
+                    ...(segmentMeta[0] ?? { is_active: true, memo: '' }),
+                    memo: sharedMemo,
+                };
+                renderSegmentEditor();
+            }
         });
 
         modal.addEventListener('click', (event) => {
@@ -780,6 +820,8 @@ foreach ($calendar['days'] as $day) {
         function resetSplits() {
             splitPoints = new Set();
             segmentMeta = [];
+            sharedMemo = '';
+            sharedMemoInput.value = '';
         }
 
         function syncModalFields() {
@@ -916,7 +958,7 @@ foreach ($calendar['days'] as $day) {
                 const defaultMeta = segmentMeta[index] ?? { memo: '', is_active: true };
 
                 nextMeta.push({
-                    memo: defaultMeta.memo ?? '',
+                    memo: defaultMeta.memo !== '' ? defaultMeta.memo : sharedMemo,
                     is_active: defaultMeta.is_active !== false,
                 });
             }
@@ -977,6 +1019,7 @@ foreach ($calendar['days'] as $day) {
                         ...(segmentMeta[index] ?? { is_active: true, memo: '' }),
                         memo: event.target.value,
                     };
+                    sharedMemo = sharedMemoInput.value;
                     syncSegmentsJson(buildSegments());
                 });
             });
@@ -1064,6 +1107,8 @@ foreach ($calendar['days'] as $day) {
             selectionEndInput.value = '';
             selectionDurationInput.value = '30';
             selectionSegmentsJsonInput.value = '';
+            sharedMemo = '';
+            sharedMemoInput.value = '';
             selectionSlotPill.textContent = '未選択';
             selectionSummary.textContent = 'まず大きな空き時間を選び、その後で自由に区切ります。';
             deleteDateInput.value = '';
@@ -1174,6 +1219,10 @@ foreach ($calendar['days'] as $day) {
                     });
 
                     splitPoints = new Set(boundaries);
+                    const firstMemo = String(decoded[0]?.memo ?? '');
+                    const sameMemo = decoded.every((segment) => String(segment.memo ?? '') === firstMemo);
+                    sharedMemo = sameMemo ? firstMemo : '';
+                    sharedMemoInput.value = sharedMemo;
                 } catch (_error) {
                     resetSplits();
                 }
