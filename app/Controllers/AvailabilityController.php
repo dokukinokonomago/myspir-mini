@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Session;
+use App\Services\BookingService;
 use DateTimeImmutable;
 use PDO;
 
@@ -332,6 +334,138 @@ class AvailabilityController
         redirect('/admin/availability-slots');
     }
 
+    public function updateDetails(): void
+    {
+        $slotId = (int) ($_POST['slot_id'] ?? 0);
+        $week = trim((string) ($_POST['week'] ?? ''));
+        $form = $this->slotDetailFormFromRequest();
+
+        if ($slotId <= 0) {
+            Session::flash('error', '対象のスケジュールが見つかりません。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $pdo = Database::connection();
+        $statement = $pdo->prepare(
+            "SELECT s.id, s.memo, s.is_active, b.id AS booking_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id = :id
+             LIMIT 1"
+        );
+        $statement->execute(['id' => $slotId]);
+        $slot = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if (!$slot) {
+            Session::flash('error', '対象のスケジュールが見つかりません。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $pdo->beginTransaction();
+
+        try {
+            $updateSlot = $pdo->prepare(
+                'UPDATE availability_slots
+                 SET memo = :memo,
+                     is_active = :is_active,
+                     updated_at = NOW()
+                 WHERE id = :id'
+            );
+            $updateSlot->execute([
+                'id' => $slotId,
+                'memo' => $form['slot_memo'] !== '' ? $form['slot_memo'] : null,
+                'is_active' => $form['is_active'],
+            ]);
+
+            if ($slot['booking_id']) {
+                $updateBooking = $pdo->prepare(
+                    'UPDATE bookings
+                     SET client_name = :client_name,
+                         company_name = :company_name,
+                         client_email = :client_email,
+                         client_phone = :client_phone,
+                         message = :message,
+                         updated_at = NOW()
+                     WHERE id = :id'
+                );
+                $updateBooking->execute([
+                    'id' => (int) $slot['booking_id'],
+                    'client_name' => $form['client_name'] !== '' ? $form['client_name'] : '予約あり',
+                    'company_name' => $form['company_name'] !== '' ? $form['company_name'] : null,
+                    'client_email' => $form['client_email'] !== '' ? $form['client_email'] : 'manual-booking+' . $slotId . '@local.invalid',
+                    'client_phone' => $form['client_phone'] !== '' ? $form['client_phone'] : '-',
+                    'message' => $form['message'] !== '' ? $form['message'] : null,
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            Session::flash('error', 'スケジュール詳細の更新に失敗しました。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        Session::flash('success', 'スケジュール詳細を更新しました。');
+        redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+    }
+
+    public function reserve(): void
+    {
+        $slotId = (int) ($_POST['slot_id'] ?? 0);
+        $week = trim((string) ($_POST['week'] ?? ''));
+        $form = $this->slotDetailFormFromRequest();
+
+        if ($slotId <= 0) {
+            Session::flash('error', '対象のスケジュールが見つかりません。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        if ($form['client_name'] === '') {
+            Session::flash('error', '予約済みにするには氏名を入力してください。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        if ($form['client_email'] !== '' && !filter_var($form['client_email'], FILTER_VALIDATE_EMAIL)) {
+            Session::flash('error', 'メールアドレスの形式が不正です。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $user = Auth::user();
+        if (!$user) {
+            Session::flash('error', '管理者情報を取得できません。');
+            redirect('/admin/login');
+        }
+
+        $normalizedBooking = [
+            'client_name' => $form['client_name'],
+            'company_name' => $form['company_name'],
+            'client_email' => $form['client_email'] !== '' ? $form['client_email'] : 'manual-booking+' . $slotId . '@local.invalid',
+            'client_phone' => $form['client_phone'] !== '' ? $form['client_phone'] : '-',
+            'message' => $form['message'],
+        ];
+
+        $updateSlot = Database::connection()->prepare(
+            'UPDATE availability_slots SET memo = :memo, is_active = :is_active, updated_at = NOW() WHERE id = :id'
+        );
+        $updateSlot->execute([
+            'id' => $slotId,
+            'memo' => $form['slot_memo'] !== '' ? $form['slot_memo'] : null,
+            'is_active' => $form['is_active'],
+        ]);
+
+        try {
+            $result = (new BookingService())->createConfirmedBooking($user, $slotId, $normalizedBooking, false);
+            Session::flash('success', '予約済みに変更しました。Google Calendar と Google Meet も作成しています。');
+            redirect('/admin/bookings/' . (int) $result['booking_id']);
+        } catch (\Throwable $exception) {
+            Session::flash('error', $exception->getMessage());
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+    }
+
     private function shiftDateTime(DateTimeImmutable $dateTime, string $recurrenceType, int $offset): DateTimeImmutable
     {
         if ($offset === 0 || $recurrenceType === 'single') {
@@ -551,7 +685,13 @@ class AvailabilityController
             "SELECT s.*,
                     b.id AS booking_id,
                     b.client_name,
-                    b.client_email
+                    b.client_email,
+                    b.client_phone,
+                    b.company_name,
+                    b.message,
+                    b.google_event_id,
+                    b.google_meet_url,
+                    b.status AS booking_status
              FROM availability_slots s
              LEFT JOIN bookings b ON b.availability_slot_id = s.id
              WHERE s.start_datetime < :week_end
@@ -595,6 +735,13 @@ class AvailabilityController
                 'status' => $status,
                 'booking_id' => $row['booking_id'] ? (int) $row['booking_id'] : null,
                 'client_name' => $row['client_name'] ?: '',
+                'client_email' => $row['client_email'] ?: '',
+                'client_phone' => $row['client_phone'] ?: '',
+                'company_name' => $row['company_name'] ?: '',
+                'message' => $row['message'] ?: '',
+                'google_event_id' => $row['google_event_id'] ?: '',
+                'google_meet_url' => $row['google_meet_url'] ?: '',
+                'is_active' => (int) $row['is_active'] === 1,
                 'can_delete' => $row['booking_id'] ? false : true,
             ];
         }
@@ -636,5 +783,23 @@ class AvailabilityController
         ]);
 
         return (int) $statement->fetchColumn();
+    }
+
+    private function slotDetailFormFromRequest(): array
+    {
+        return [
+            'client_name' => trim((string) ($_POST['client_name'] ?? '')),
+            'company_name' => trim((string) ($_POST['company_name'] ?? '')),
+            'client_email' => trim((string) ($_POST['client_email'] ?? '')),
+            'client_phone' => trim((string) ($_POST['client_phone'] ?? '')),
+            'message' => trim((string) ($_POST['message'] ?? '')),
+            'slot_memo' => trim((string) ($_POST['slot_memo'] ?? '')),
+            'is_active' => isset($_POST['is_active']) ? 1 : 0,
+        ];
+    }
+
+    private function buildWeekQuery(string $week): string
+    {
+        return $week !== '' ? '?week=' . rawurlencode($week) : '';
     }
 }

@@ -10,6 +10,7 @@ $cellHeight = 34;
 $weekdayMap = ['Mon' => '月', 'Tue' => '火', 'Wed' => '水', 'Thu' => '木', 'Fri' => '金', 'Sat' => '土', 'Sun' => '日'];
 $now = new DateTimeImmutable();
 $slotEventsJson = json_encode($calendar['slot_events'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$viewerCanManage = \App\Core\Auth::check();
 
 $timeLabels = [];
 for ($slotIndex = 0; $slotIndex < $slotCount; $slotIndex++) {
@@ -216,7 +217,10 @@ foreach ($calendar['days'] as $day) {
                                                     <?= $event['status'] === 'booked' ? '予約済み' : ($event['status'] === 'hidden' ? '非表示' : '公開中') ?>
                                                 </span>
                                             </div>
-                                            <div class="mt-3 flex justify-end">
+                                            <div class="mt-3 flex flex-wrap justify-end gap-2">
+                                                <button type="button" class="event-detail-trigger rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100" data-event-id="<?= e((string) $event['id']) ?>">
+                                                    詳細を見る
+                                                </button>
                                                 <?php if ($event['can_delete']): ?>
                                                     <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                                         <?= csrf_field() ?>
@@ -304,8 +308,10 @@ foreach ($calendar['days'] as $day) {
                                         default => 'bg-brand text-white shadow-blue-100',
                                     };
                                     ?>
-                                    <div
-                                        class="pointer-events-none absolute inset-x-1 z-10 rounded-2xl px-3 py-2 text-xs shadow-md <?= $eventClass ?>"
+                                    <button
+                                        type="button"
+                                        class="event-detail-trigger absolute inset-x-1 z-10 rounded-2xl px-3 py-2 text-left text-xs shadow-md transition hover:brightness-95 <?= $eventClass ?>"
+                                        data-event-id="<?= e((string) $event['id']) ?>"
                                         style="top: <?= e((string) ($eventTop + 2)) ?>px; height: <?= e((string) $eventHeight) ?>px;"
                                     >
                                         <p class="font-semibold"><?= e($event['start_time']) ?> - <?= e($event['end_time']) ?></p>
@@ -316,7 +322,7 @@ foreach ($calendar['days'] as $day) {
                                                 <?= e($event['memo'] ?: '空き枠') ?>
                                             <?php endif; ?>
                                         </p>
-                                    </div>
+                                    </button>
                                 <?php endforeach; ?>
                             </div>
                         <?php endforeach; ?>
@@ -354,7 +360,10 @@ foreach ($calendar['days'] as $day) {
                                         <?= $event['status'] === 'booked' ? '予約済み' : ($event['status'] === 'hidden' ? '非表示' : '公開中') ?>
                                     </span>
                                 </div>
-                                <div class="mt-3 flex justify-end">
+                                <div class="mt-3 flex flex-wrap justify-end gap-2">
+                                    <button type="button" class="event-detail-trigger rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100" data-event-id="<?= e((string) $event['id']) ?>">
+                                        詳細を見る
+                                    </button>
                                     <?php if ($event['can_delete']): ?>
                                         <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                             <?= csrf_field() ?>
@@ -370,6 +379,109 @@ foreach ($calendar['days'] as $day) {
                 </div>
             </div>
         </aside>
+    </div>
+</div>
+
+<div id="event-detail-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto my-6 max-h-[calc(100vh-3rem)] max-w-3xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
+        <div class="mb-5 flex items-start justify-between gap-4">
+            <div>
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">Schedule Detail</p>
+                <h2 class="mt-2 text-2xl font-semibold text-ink">スケジュール詳細</h2>
+                <p id="event-detail-summary" class="mt-3 text-sm leading-6 text-slate-500">選択したスケジュールの内容を確認・更新します。</p>
+            </div>
+            <button type="button" id="event-detail-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
+        </div>
+
+        <form action="/admin/availability-slots/details" method="POST" id="event-detail-form" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <?= csrf_field() ?>
+            <input type="hidden" name="slot_id" id="event-detail-slot-id" value="">
+            <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
+
+            <div class="space-y-5">
+                <div class="rounded-3xl bg-slate-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Schedule</p>
+                    <p id="event-detail-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        <span id="event-detail-status-pill" class="rounded-full bg-mist px-3 py-1 text-xs font-medium text-brand">公開中</span>
+                        <span id="event-detail-booking-pill" class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">未予約</span>
+                    </div>
+                </div>
+
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <label for="event-detail-slot-memo" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Memo</label>
+                    <textarea id="event-detail-slot-memo" name="slot_memo" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="このスケジュールのメモを入力"></textarea>
+                    <p class="mt-2 text-xs text-slate-500">管理者は自由に更新できます。管理者以外は氏名とメモだけを編集可能にする前提の画面構成です。</p>
+                </div>
+
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Booking</p>
+                            <h3 class="mt-2 text-lg font-semibold text-ink">予約情報</h3>
+                        </div>
+                        <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                            <input type="checkbox" id="event-detail-active" name="is_active" class="h-4 w-4 rounded border-slate-300 text-brand" checked>
+                            公開する
+                        </label>
+                    </div>
+                    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label for="event-detail-client-name" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">氏名</label>
+                            <input type="text" id="event-detail-client-name" name="client_name" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="山田 太郎">
+                        </div>
+                        <div class="admin-only-field">
+                            <label for="event-detail-company-name" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">会社名</label>
+                            <input type="text" id="event-detail-company-name" name="company_name" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="株式会社サンプル">
+                        </div>
+                        <div class="admin-only-field">
+                            <label for="event-detail-client-email" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">メールアドレス</label>
+                            <input type="email" id="event-detail-client-email" name="client_email" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="client@example.com">
+                        </div>
+                        <div class="admin-only-field">
+                            <label for="event-detail-client-phone" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">電話番号</label>
+                            <input type="text" id="event-detail-client-phone" name="client_phone" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="090-1234-5678">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label for="event-detail-message" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">相談内容 / メモ</label>
+                        <textarea id="event-detail-message" name="message" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="予約内容やメモを入力"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-5">
+                <div class="rounded-3xl border border-slate-200 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Google</p>
+                    <h3 class="mt-2 text-lg font-semibold text-ink">連携状況</h3>
+                    <dl class="mt-4 space-y-4 text-sm">
+                        <div>
+                            <dt class="text-slate-500">Google Event ID</dt>
+                            <dd id="event-detail-google-event-id" class="mt-1 break-all text-slate-800">-</dd>
+                        </div>
+                        <div>
+                            <dt class="text-slate-500">Google Meet</dt>
+                            <dd class="mt-1 text-slate-800">
+                                <a id="event-detail-meet-link" href="#" target="_blank" rel="noopener noreferrer" class="hidden break-all text-brand underline decoration-slate-200 underline-offset-4"></a>
+                                <span id="event-detail-meet-empty">-</span>
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+
+                <div class="rounded-3xl bg-slate-50 p-4">
+                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin Actions</p>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">管理者は詳細更新に加え、未予約枠をここから予約済みにできます。Google Calendar と Google Meet の作成は予約済み化した時だけ実行されます。</p>
+                </div>
+
+                <div class="flex flex-wrap justify-end gap-3">
+                    <button type="submit" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">詳細を保存</button>
+                    <button type="submit" id="event-detail-reserve-button" formaction="/admin/availability-slots/reserve" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">
+                        予約済みにする
+                    </button>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -576,6 +688,25 @@ foreach ($calendar['days'] as $day) {
         const modal = document.getElementById('selection-modal');
         const closeButton = document.getElementById('selection-modal-close');
         const clearButton = document.getElementById('selection-clear');
+        const eventDetailModal = document.getElementById('event-detail-modal');
+        const eventDetailCloseButton = document.getElementById('event-detail-close');
+        const eventDetailSummary = document.getElementById('event-detail-summary');
+        const eventDetailSlotIdInput = document.getElementById('event-detail-slot-id');
+        const eventDetailSlotPill = document.getElementById('event-detail-slot-pill');
+        const eventDetailStatusPill = document.getElementById('event-detail-status-pill');
+        const eventDetailBookingPill = document.getElementById('event-detail-booking-pill');
+        const eventDetailSlotMemoInput = document.getElementById('event-detail-slot-memo');
+        const eventDetailClientNameInput = document.getElementById('event-detail-client-name');
+        const eventDetailCompanyNameInput = document.getElementById('event-detail-company-name');
+        const eventDetailClientEmailInput = document.getElementById('event-detail-client-email');
+        const eventDetailClientPhoneInput = document.getElementById('event-detail-client-phone');
+        const eventDetailMessageInput = document.getElementById('event-detail-message');
+        const eventDetailActiveInput = document.getElementById('event-detail-active');
+        const eventDetailGoogleEventId = document.getElementById('event-detail-google-event-id');
+        const eventDetailMeetLink = document.getElementById('event-detail-meet-link');
+        const eventDetailMeetEmpty = document.getElementById('event-detail-meet-empty');
+        const eventDetailReserveButton = document.getElementById('event-detail-reserve-button');
+        const eventDetailTriggers = Array.from(document.querySelectorAll('.event-detail-trigger'));
         const deleteModal = document.getElementById('delete-modal');
         const deleteModalCloseButton = document.getElementById('delete-modal-close');
         const deleteClearButton = document.getElementById('delete-clear');
@@ -612,6 +743,7 @@ foreach ($calendar['days'] as $day) {
         const plannerModeCopy = document.getElementById('planner-mode-copy');
         const hasServerErrors = <?= !empty($errors) ? 'true' : 'false' ?>;
         const slotEvents = <?= $slotEventsJson ?: '[]' ?>;
+        const viewerCanManage = <?= $viewerCanManage ? 'true' : 'false' ?>;
 
         let dragState = null;
         let selection = null;
@@ -724,6 +856,14 @@ foreach ($calendar['days'] as $day) {
             }
         });
 
+        eventDetailModal.addEventListener('click', (event) => {
+            if (event.target === eventDetailModal) {
+                closeEventDetailModal();
+            }
+        });
+
+        eventDetailCloseButton.addEventListener('click', closeEventDetailModal);
+
         recurrenceInputs.forEach((input) => {
             input.addEventListener('change', syncRecurrenceControls);
         });
@@ -749,6 +889,12 @@ foreach ($calendar['days'] as $day) {
                 resetSplits();
                 syncModalFields();
                 openModal();
+            });
+        });
+
+        eventDetailTriggers.forEach((button) => {
+            button.addEventListener('click', () => {
+                openEventDetailModal(Number(button.dataset.eventId));
             });
         });
 
@@ -1070,6 +1216,7 @@ foreach ($calendar['days'] as $day) {
         }
 
         function openModal() {
+            closeEventDetailModal(false);
             closeDeleteModal(false);
             modal.classList.remove('hidden');
             syncBodyScrollLock();
@@ -1081,6 +1228,7 @@ foreach ($calendar['days'] as $day) {
         }
 
         function openDeleteModal() {
+            closeEventDetailModal(false);
             closeModal();
             deleteModal.classList.remove('hidden');
             syncBodyScrollLock();
@@ -1094,8 +1242,79 @@ foreach ($calendar['days'] as $day) {
         }
 
         function syncBodyScrollLock() {
-            const hasOpenModal = !modal.classList.contains('hidden') || !deleteModal.classList.contains('hidden');
+            const hasOpenModal = !modal.classList.contains('hidden')
+                || !deleteModal.classList.contains('hidden')
+                || !eventDetailModal.classList.contains('hidden');
             document.body.style.overflow = hasOpenModal ? 'hidden' : '';
+        }
+
+        function openEventDetailModal(eventId) {
+            const eventData = slotEvents.find((item) => Number(item.id) === Number(eventId));
+
+            if (!eventData) {
+                return;
+            }
+
+            closeModal();
+            closeDeleteModal(false);
+            hydrateEventDetail(eventData);
+            eventDetailModal.classList.remove('hidden');
+            syncBodyScrollLock();
+        }
+
+        function closeEventDetailModal(syncScrollLock = true) {
+            eventDetailModal.classList.add('hidden');
+            if (syncScrollLock) {
+                syncBodyScrollLock();
+            }
+        }
+
+        function hydrateEventDetail(eventData) {
+            const isBooked = eventData.status === 'booked';
+            const statusLabel = isBooked ? '予約済み' : (eventData.status === 'hidden' ? '非表示' : '公開中');
+
+            eventDetailSlotIdInput.value = String(eventData.id);
+            eventDetailSlotPill.textContent = `${eventData.date} ${eventData.start_time} - ${eventData.end_time}`;
+            eventDetailSummary.textContent = isBooked
+                ? '予約済みスケジュールの詳細です。管理者は内容更新と Meet 情報の確認ができます。'
+                : '未予約スケジュールの詳細です。管理者は内容更新に加えて、ここから予約済みにできます。';
+            eventDetailStatusPill.textContent = statusLabel;
+            eventDetailStatusPill.className = eventData.status === 'booked'
+                ? 'rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700'
+                : (eventData.status === 'hidden'
+                    ? 'rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600'
+                    : 'rounded-full bg-mist px-3 py-1 text-xs font-medium text-brand');
+            eventDetailBookingPill.textContent = isBooked ? '予約あり' : '未予約';
+            eventDetailSlotMemoInput.value = eventData.memo || '';
+            eventDetailClientNameInput.value = eventData.client_name || '';
+            eventDetailCompanyNameInput.value = eventData.company_name || '';
+            eventDetailClientEmailInput.value = eventData.client_email || '';
+            eventDetailClientPhoneInput.value = eventData.client_phone || '';
+            eventDetailMessageInput.value = eventData.message || '';
+            eventDetailActiveInput.checked = Boolean(eventData.is_active);
+            eventDetailGoogleEventId.textContent = eventData.google_event_id || '-';
+            eventDetailReserveButton.classList.toggle('hidden', isBooked || !viewerCanManage);
+            eventDetailReserveButton.disabled = isBooked || !viewerCanManage;
+
+            if (eventData.google_meet_url) {
+                eventDetailMeetLink.href = eventData.google_meet_url;
+                eventDetailMeetLink.textContent = eventData.google_meet_url;
+                eventDetailMeetLink.classList.remove('hidden');
+                eventDetailMeetEmpty.classList.add('hidden');
+            } else {
+                eventDetailMeetLink.href = '#';
+                eventDetailMeetLink.textContent = '';
+                eventDetailMeetLink.classList.add('hidden');
+                eventDetailMeetEmpty.classList.remove('hidden');
+            }
+
+            document.querySelectorAll('.admin-only-field').forEach((element) => {
+                element.classList.toggle('hidden', !viewerCanManage);
+            });
+            eventDetailActiveInput.disabled = !viewerCanManage;
+            eventDetailCompanyNameInput.readOnly = !viewerCanManage;
+            eventDetailClientEmailInput.readOnly = !viewerCanManage;
+            eventDetailClientPhoneInput.readOnly = !viewerCanManage;
         }
 
         function clearSelection() {
