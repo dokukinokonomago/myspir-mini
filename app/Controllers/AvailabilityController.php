@@ -608,8 +608,8 @@ class AvailabilityController
             'days' => $days,
             'slot_events' => $slotEvents,
             'stats' => $weekStats,
-            'time_start_hour' => 8,
-            'time_end_hour' => 21,
+            'time_start_hour' => 6,
+            'time_end_hour' => 23,
             'slot_step_minutes' => 30,
         ];
     }
