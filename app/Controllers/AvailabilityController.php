@@ -275,6 +275,63 @@ class AvailabilityController
         redirect('/admin/availability-slots/create?week=' . $rangeStart->format('Y-m-d'));
     }
 
+    public function destroySelected(): void
+    {
+        $slotIds = array_values(array_unique(array_map(
+            static fn (mixed $id): int => (int) $id,
+            (array) ($_POST['slot_ids'] ?? [])
+        )));
+        $slotIds = array_values(array_filter($slotIds, static fn (int $id): bool => $id > 0));
+
+        if ($slotIds === []) {
+            Session::flash('error', '削除する空き枠を選択してください。');
+            redirect('/admin/availability-slots');
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($slotIds), '?'));
+        $pdo = Database::connection();
+
+        $statement = $pdo->prepare(
+            "SELECT s.id, b.id AS booking_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id IN ({$placeholders})"
+        );
+        $statement->execute($slotIds);
+
+        $deletableIds = [];
+        $bookedCount = 0;
+
+        foreach ($statement->fetchAll() as $slot) {
+            if ($slot['booking_id']) {
+                $bookedCount++;
+                continue;
+            }
+
+            $deletableIds[] = (int) $slot['id'];
+        }
+
+        if ($deletableIds === []) {
+            $message = $bookedCount > 0
+                ? '選択した空き枠はすべて予約済みのため削除できません。'
+                : '削除できる空き枠が見つかりませんでした。';
+            Session::flash('error', $message);
+            redirect('/admin/availability-slots');
+        }
+
+        $deletePlaceholders = implode(', ', array_fill(0, count($deletableIds), '?'));
+        $delete = $pdo->prepare("DELETE FROM availability_slots WHERE id IN ({$deletePlaceholders})");
+        $delete->execute($deletableIds);
+
+        $message = count($deletableIds) . '件の空き枠を削除しました。';
+        if ($bookedCount > 0) {
+            $message .= ' 予約済み ' . $bookedCount . ' 件は削除していません。';
+        }
+
+        Session::flash('success', $message);
+        redirect('/admin/availability-slots');
+    }
+
     private function shiftDateTime(DateTimeImmutable $dateTime, string $recurrenceType, int $offset): DateTimeImmutable
     {
         if ($offset === 0 || $recurrenceType === 'single') {
