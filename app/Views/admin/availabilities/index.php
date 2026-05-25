@@ -21,13 +21,85 @@
                 <button type="button" id="select-all-slots-button" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
                     全てを選択
                 </button>
-                <span id="selected-slot-count" class="rounded-full bg-slate-100 px-4 py-2 text-xs font-medium text-slate-500">0件選択中</span>
+                <span id="selected-slot-count" class="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">0件選択中</span>
                 <button type="submit" id="delete-selected-slots-button" form="slot-bulk-delete-form" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400" disabled>
                     選択した空き枠を削除
                 </button>
             </div>
         </div>
-        <div class="overflow-x-auto">
+        <div id="selected-slot-warning" class="hidden border-b border-rose-100 bg-rose-50/80 px-5 py-3 text-sm font-medium text-rose-700">
+            選択中の空き枠を削除すると元に戻せません。内容を確認して実行してください。
+        </div>
+        <div class="space-y-3 px-4 py-4 md:hidden">
+            <?php foreach ($slots as $slot): ?>
+                <article class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="space-y-2">
+                            <div class="text-sm font-semibold text-ink">
+                                <?= e(format_datetime($slot['start_datetime'])) ?>
+                            </div>
+                            <div class="text-xs text-slate-400">
+                                <?= e(format_datetime($slot['end_datetime'], 'H:i')) ?>まで / <?= e((string) $slot['duration_minutes']) ?>分
+                            </div>
+                        </div>
+                        <?php if (!$slot['booking_id']): ?>
+                            <label class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    name="slot_ids[]"
+                                    value="<?= e((string) $slot['id']) ?>"
+                                    form="slot-bulk-delete-form"
+                                    data-slot-id="<?= e((string) $slot['id']) ?>"
+                                    class="slot-select-checkbox h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200"
+                                >
+                                選択
+                            </label>
+                        <?php else: ?>
+                            <span class="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                        <span class="rounded-full px-3 py-1 text-xs font-medium <?= (int) $slot['is_active'] === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' ?>">
+                            <?= (int) $slot['is_active'] === 1 ? '表示中' : '非表示' ?>
+                        </span>
+                        <?php if ($slot['booking_id']): ?>
+                            <a href="/admin/bookings/<?= e((string) $slot['booking_id']) ?>" class="rounded-full bg-brand/10 px-3 py-1 text-xs font-medium text-brand">
+                                <?= e($slot['client_name']) ?> 様
+                            </a>
+                        <?php else: ?>
+                            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">未予約</span>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="mt-3 text-sm text-slate-600">
+                        <span class="font-medium text-slate-500">メモ:</span>
+                        <?= e($slot['memo'] ?: '-') ?>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
+                            <?= csrf_field() ?>
+                            <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
+                                <?= (int) $slot['is_active'] === 1 ? '非表示にする' : '表示する' ?>
+                            </button>
+                        </form>
+                        <?php if (!$slot['booking_id']): ?>
+                            <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                    個別削除
+                                </button>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+            <?php if (!$slots): ?>
+                <div class="rounded-3xl border border-slate-200 bg-white px-4 py-8 text-center text-slate-500 shadow-sm">空き枠はまだありません。</div>
+            <?php endif; ?>
+        </div>
+        <div class="hidden overflow-x-auto md:block">
             <table class="min-w-full divide-y divide-slate-100 text-sm">
                 <thead class="bg-slate-50 text-left text-slate-500">
                     <tr>
@@ -51,6 +123,7 @@
                                             name="slot_ids[]"
                                             value="<?= e((string) $slot['id']) ?>"
                                             form="slot-bulk-delete-form"
+                                            data-slot-id="<?= e((string) $slot['id']) ?>"
                                             class="slot-select-checkbox h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200"
                                         >
                                         選択
@@ -117,23 +190,43 @@
         const selectAllButton = document.getElementById('select-all-slots-button');
         const deleteSelectedButton = document.getElementById('delete-selected-slots-button');
         const selectedCountLabel = document.getElementById('selected-slot-count');
+        const selectedSlotWarning = document.getElementById('selected-slot-warning');
         const checkboxes = Array.from(document.querySelectorAll('.slot-select-checkbox'));
 
-        if (!bulkForm || !selectAllButton || !deleteSelectedButton || !selectedCountLabel) {
+        if (!bulkForm || !selectAllButton || !deleteSelectedButton || !selectedCountLabel || !selectedSlotWarning) {
             return;
         }
 
+        function getSelectedSlotIds() {
+            return Array.from(new Set(
+                checkboxes
+                    .filter((checkbox) => checkbox.checked)
+                    .map((checkbox) => checkbox.dataset.slotId || checkbox.value)
+            ));
+        }
+
+        function getUniqueSlotCount() {
+            return new Set(checkboxes.map((checkbox) => checkbox.dataset.slotId || checkbox.value)).size;
+        }
+
         function syncSelectionState() {
-            const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
-            const allSelected = selectedCount > 0 && selectedCount === checkboxes.length;
+            const selectedCount = getSelectedSlotIds().length;
+            const allSelected = selectedCount > 0 && selectedCount === getUniqueSlotCount();
 
             selectedCountLabel.textContent = `${selectedCount}件選択中`;
             deleteSelectedButton.disabled = selectedCount === 0;
             selectAllButton.textContent = allSelected ? '全てを解除' : '全てを選択';
+            deleteSelectedButton.textContent = selectedCount > 0
+                ? `選択した ${selectedCount} 件を削除`
+                : '選択した空き枠を削除';
+            selectedSlotWarning.classList.toggle('hidden', selectedCount === 0);
+            selectedCountLabel.className = selectedCount > 0
+                ? 'rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700'
+                : 'rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500';
         }
 
         selectAllButton.addEventListener('click', () => {
-            const shouldSelectAll = checkboxes.some((checkbox) => !checkbox.checked);
+            const shouldSelectAll = getSelectedSlotIds().length < getUniqueSlotCount();
             checkboxes.forEach((checkbox) => {
                 checkbox.checked = shouldSelectAll;
             });
@@ -145,14 +238,14 @@
         });
 
         bulkForm.addEventListener('submit', (event) => {
-            const selectedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+            const selectedCount = getSelectedSlotIds().length;
 
             if (selectedCount === 0) {
                 event.preventDefault();
                 return;
             }
 
-            if (!window.confirm(`選択した ${selectedCount} 件の空き枠を削除しますか？`)) {
+            if (!window.confirm(`選択した ${selectedCount} 件の空き枠を完全に削除します。\nこの操作は元に戻せません。実行しますか？`)) {
                 event.preventDefault();
             }
         });
