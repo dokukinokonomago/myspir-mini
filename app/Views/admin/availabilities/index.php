@@ -132,21 +132,21 @@
         </div>
         <div class="hidden overflow-x-auto md:block">
             <table class="min-w-full divide-y divide-slate-100 text-xs">
-                <thead class="bg-slate-50 text-left text-[11px] text-slate-500">
+                <thead class="bg-slate-50 text-[11px] text-slate-500">
                     <tr>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">選択</th>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">日時</th>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">面談時間</th>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">状態</th>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">予約</th>
-                        <th class="whitespace-nowrap px-4 py-4 font-medium">メモ</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">選択</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">日時</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">面談時間</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">状態</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">予約</th>
+                        <th class="whitespace-nowrap px-4 py-4 text-center font-medium">メモ</th>
                         <th class="whitespace-nowrap px-4 py-4 font-medium"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <?php foreach ($slots as $slot): ?>
                         <tr class="align-top">
-                            <td class="whitespace-nowrap px-4 py-4">
+                            <td class="whitespace-nowrap px-4 py-4 text-center">
                                 <?php if (!$slot['booking_id']): ?>
                                     <label class="inline-flex items-center gap-2 text-xs text-slate-500">
                                         <input
@@ -167,17 +167,17 @@
                                     <span class="text-xs text-rose-400">削除</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-4 text-slate-700">
+                            <td class="whitespace-nowrap px-4 py-4 text-center text-slate-700">
                                 <?= e(format_datetime($slot['start_datetime'])) ?><br>
                                 <span class="text-slate-400">- <?= e(format_datetime($slot['end_datetime'], 'H:i')) ?></span>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-4 text-slate-700"><?= e((string) $slot['duration_minutes']) ?>分</td>
-                            <td class="whitespace-nowrap px-4 py-4">
+                            <td class="whitespace-nowrap px-4 py-4 text-center text-slate-700"><?= e((string) $slot['duration_minutes']) ?>分</td>
+                            <td class="whitespace-nowrap px-4 py-4 text-center">
                                 <span class="inline-flex whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-medium <?= (int) $slot['is_active'] === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' ?>">
                                     <?= (int) $slot['is_active'] === 1 ? '表示中' : '非表示' ?>
                                 </span>
                             </td>
-                            <td class="whitespace-nowrap px-4 py-4 text-slate-700">
+                            <td class="whitespace-nowrap px-4 py-4 text-center text-slate-700">
                                 <?php if ($slot['booking_id']): ?>
                                     <a href="/admin/bookings/<?= e((string) $slot['booking_id']) ?>" class="font-medium text-brand"><?= e($slot['client_name']) ?> 様</a>
                                     <div class="text-xs text-slate-500"><?= e($slot['client_email']) ?></div>
@@ -185,7 +185,7 @@
                                     <span class="text-slate-400">未予約</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="w-40 max-w-[10rem] px-4 py-4 text-slate-600">
+                            <td class="w-40 max-w-[10rem] px-4 py-4 text-center text-slate-600">
                                 <div class="truncate"><?= e($slot['memo'] ?: '-') ?></div>
                             </td>
                             <td class="whitespace-nowrap px-4 py-4 text-right">
