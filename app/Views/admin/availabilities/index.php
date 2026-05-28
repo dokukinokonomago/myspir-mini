@@ -131,22 +131,22 @@
             <?php endif; ?>
         </div>
         <div class="hidden overflow-x-auto md:block">
-            <table class="min-w-full divide-y divide-slate-100 text-sm">
-                <thead class="bg-slate-50 text-left text-slate-500">
+            <table class="min-w-full divide-y divide-slate-100 text-xs">
+                <thead class="bg-slate-50 text-left text-[11px] text-slate-500">
                     <tr>
-                        <th class="px-5 py-4 font-medium">選択</th>
-                        <th class="px-5 py-4 font-medium">日時</th>
-                        <th class="px-5 py-4 font-medium">面談時間</th>
-                        <th class="px-5 py-4 font-medium">状態</th>
-                        <th class="px-5 py-4 font-medium">予約</th>
-                        <th class="px-5 py-4 font-medium">メモ</th>
-                        <th class="px-5 py-4 font-medium"></th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">選択</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">日時</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">面談時間</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">状態</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">予約</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium">メモ</th>
+                        <th class="whitespace-nowrap px-4 py-4 font-medium"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <?php foreach ($slots as $slot): ?>
                         <tr class="align-top">
-                            <td class="px-5 py-4">
+                            <td class="whitespace-nowrap px-4 py-4">
                                 <?php if (!$slot['booking_id']): ?>
                                     <label class="inline-flex items-center gap-2 text-xs text-slate-500">
                                         <input
@@ -167,17 +167,17 @@
                                     <span class="text-xs text-rose-400">削除</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="px-5 py-4 text-slate-700">
+                            <td class="whitespace-nowrap px-4 py-4 text-slate-700">
                                 <?= e(format_datetime($slot['start_datetime'])) ?><br>
                                 <span class="text-slate-400">- <?= e(format_datetime($slot['end_datetime'], 'H:i')) ?></span>
                             </td>
-                            <td class="px-5 py-4 text-slate-700"><?= e((string) $slot['duration_minutes']) ?>分</td>
-                            <td class="px-5 py-4">
-                                <span class="rounded-full px-3 py-1 text-xs font-medium <?= (int) $slot['is_active'] === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' ?>">
+                            <td class="whitespace-nowrap px-4 py-4 text-slate-700"><?= e((string) $slot['duration_minutes']) ?>分</td>
+                            <td class="whitespace-nowrap px-4 py-4">
+                                <span class="inline-flex whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-medium <?= (int) $slot['is_active'] === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600' ?>">
                                     <?= (int) $slot['is_active'] === 1 ? '表示中' : '非表示' ?>
                                 </span>
                             </td>
-                            <td class="px-5 py-4 text-slate-700">
+                            <td class="whitespace-nowrap px-4 py-4 text-slate-700">
                                 <?php if ($slot['booking_id']): ?>
                                     <a href="/admin/bookings/<?= e((string) $slot['booking_id']) ?>" class="font-medium text-brand"><?= e($slot['client_name']) ?> 様</a>
                                     <div class="text-xs text-slate-500"><?= e($slot['client_email']) ?></div>
@@ -185,19 +185,21 @@
                                     <span class="text-slate-400">未予約</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="px-5 py-4 text-slate-600"><?= e($slot['memo'] ?: '-') ?></td>
-                            <td class="px-5 py-4 text-right">
-                                <div class="flex justify-end gap-2">
+                            <td class="w-40 max-w-[10rem] px-4 py-4 text-slate-600">
+                                <div class="truncate"><?= e($slot['memo'] ?: '-') ?></div>
+                            </td>
+                            <td class="whitespace-nowrap px-4 py-4 text-right">
+                                <div class="flex flex-nowrap items-center justify-end gap-2">
                                     <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
                                         <?= csrf_field() ?>
-                                        <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
+                                        <button type="submit" class="whitespace-nowrap rounded-full border border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100">
                                             <?= (int) $slot['is_active'] === 1 ? '非表示' : '表示' ?>
                                         </button>
                                     </form>
                                     <?php if (!$slot['booking_id']): ?>
                                         <button
                                             type="button"
-                                            class="list-reserve-trigger rounded-full bg-ink px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800"
+                                            class="list-reserve-trigger whitespace-nowrap rounded-full bg-ink px-3 py-2 text-[11px] font-medium text-white transition hover:bg-slate-800"
                                             data-slot-id="<?= e((string) $slot['id']) ?>"
                                             data-slot-start="<?= e(format_datetime($slot['start_datetime'])) ?>"
                                             data-slot-end="<?= e(format_datetime($slot['end_datetime'], 'H:i')) ?>"
@@ -209,7 +211,7 @@
                                         <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="return_to" value="index">
-                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                            <button type="submit" class="whitespace-nowrap rounded-full border border-rose-200 px-3 py-2 text-[11px] font-medium text-rose-600 transition hover:bg-rose-50">
                                                 削除
                                             </button>
                                         </form>
@@ -217,7 +219,7 @@
                                         <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？');">
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="return_to" value="index">
-                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                            <button type="submit" class="whitespace-nowrap rounded-full border border-rose-200 px-3 py-2 text-[11px] font-medium text-rose-600 transition hover:bg-rose-50">
                                                 削除
                                             </button>
                                         </form>
