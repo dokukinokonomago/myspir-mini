@@ -77,11 +77,8 @@ foreach ($calendar['days'] as $day) {
 <div class="space-y-6">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-            <p class="text-sm uppercase tracking-[0.2em] text-brand">Availability Planner</p>
+            <p class="text-sm uppercase tracking-[0.2em] text-brand">空き枠作成</p>
             <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink">週カレンダーで空き枠を作成</h1>
-            <p class="mt-3 max-w-3xl text-sm leading-7 text-slate-500">
-                Spir 風に、カレンダー上の時間帯を直接なぞって空き枠を作成します。30分または60分の範囲をドラッグし、内容を確認して保存してください。
-            </p>
         </div>
         <div class="flex flex-wrap gap-3">
             <a href="/admin/availability-slots?week=<?= e($calendar['week_start']) ?>" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">一覧を見る</a>
