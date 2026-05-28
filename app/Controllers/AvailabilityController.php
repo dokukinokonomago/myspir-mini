@@ -261,11 +261,7 @@ class AvailabilityController
 
     public function destroySelected(): void
     {
-        $slotIds = array_values(array_unique(array_map(
-            static fn (mixed $id): int => (int) $id,
-            (array) ($_POST['slot_ids'] ?? [])
-        )));
-        $slotIds = array_values(array_filter($slotIds, static fn (int $id): bool => $id > 0));
+        $slotIds = $this->selectedSlotIdsFromRequest();
 
         if ($slotIds === []) {
             Session::flash('error', '削除する空き枠を選択してください。');
@@ -310,6 +306,171 @@ class AvailabilityController
         $message = count($deletableIds) . '件の空き枠を削除しました。';
         if ($bookedCount > 0) {
             $message .= ' 予約済み ' . $bookedCount . ' 件は削除していません。';
+        }
+
+        Session::flash('success', $message);
+        redirect('/admin/availability-slots');
+    }
+
+    public function hideSelected(): void
+    {
+        $slotIds = $this->selectedSlotIdsFromRequest();
+
+        if ($slotIds === []) {
+            Session::flash('error', '非表示にする空き枠を選択してください。');
+            redirect('/admin/availability-slots');
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($slotIds), '?'));
+        $pdo = Database::connection();
+
+        $statement = $pdo->prepare(
+            "SELECT s.id, s.is_active, b.id AS booking_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id IN ({$placeholders})"
+        );
+        $statement->execute($slotIds);
+
+        $targetIds = [];
+        $bookedCount = 0;
+        $alreadyHiddenCount = 0;
+
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $slot) {
+            if ($slot['booking_id']) {
+                $bookedCount++;
+                continue;
+            }
+
+            if ((int) $slot['is_active'] !== 1) {
+                $alreadyHiddenCount++;
+                continue;
+            }
+
+            $targetIds[] = (int) $slot['id'];
+        }
+
+        if ($targetIds === []) {
+            $message = $bookedCount > 0
+                ? '選択した空き枠は予約済み、またはすでに非表示です。'
+                : '非表示にできる空き枠が見つかりませんでした。';
+            Session::flash('error', $message);
+            redirect('/admin/availability-slots');
+        }
+
+        $updatePlaceholders = implode(', ', array_fill(0, count($targetIds), '?'));
+        $update = $pdo->prepare("UPDATE availability_slots SET is_active = 0, updated_at = NOW() WHERE id IN ({$updatePlaceholders})");
+        $update->execute($targetIds);
+
+        $message = count($targetIds) . '件の空き枠を非表示にしました。';
+        if ($alreadyHiddenCount > 0) {
+            $message .= ' すでに非表示 ' . $alreadyHiddenCount . ' 件は変更していません。';
+        }
+        if ($bookedCount > 0) {
+            $message .= ' 予約済み ' . $bookedCount . ' 件は変更していません。';
+        }
+
+        Session::flash('success', $message);
+        redirect('/admin/availability-slots');
+    }
+
+    public function reserveSelected(): void
+    {
+        $slotIds = $this->selectedSlotIdsFromRequest();
+        $form = $this->slotDetailFormFromRequest();
+
+        if ($slotIds === []) {
+            Session::flash('error', '予約済みにする空き枠を選択してください。');
+            redirect('/admin/availability-slots');
+        }
+
+        if ($form['client_name'] === '') {
+            Session::flash('error', '予約済みにするには氏名を入力してください。');
+            redirect('/admin/availability-slots');
+        }
+
+        if ($form['client_email'] !== '' && !filter_var($form['client_email'], FILTER_VALIDATE_EMAIL)) {
+            Session::flash('error', 'メールアドレスの形式が不正です。');
+            redirect('/admin/availability-slots');
+        }
+
+        $user = Auth::user();
+        if (!$user) {
+            Session::flash('error', '管理者情報を取得できません。');
+            redirect('/admin/login');
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($slotIds), '?'));
+        $statement = Database::connection()->prepare(
+            "SELECT s.id, s.memo, s.is_active, b.id AS booking_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id IN ({$placeholders})
+             ORDER BY s.start_datetime ASC"
+        );
+        $statement->execute($slotIds);
+
+        $eligibleSlots = [];
+        $bookedCount = 0;
+
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $slot) {
+            if ($slot['booking_id']) {
+                $bookedCount++;
+                continue;
+            }
+
+            $eligibleSlots[] = (int) $slot['id'];
+        }
+
+        if ($eligibleSlots === []) {
+            Session::flash('error', '選択した空き枠はすべて予約済みです。');
+            redirect('/admin/availability-slots');
+        }
+
+        $normalizedBooking = [
+            'client_name' => $form['client_name'],
+            'company_name' => $form['company_name'],
+            'client_email' => $form['client_email'],
+            'client_phone' => $form['client_phone'] !== '' ? $form['client_phone'] : '-',
+            'message' => $form['message'],
+        ];
+
+        $successCount = 0;
+        $failedMessages = [];
+        $updateSlot = Database::connection()->prepare(
+            'UPDATE availability_slots SET memo = :memo, is_active = :is_active, updated_at = NOW() WHERE id = :id'
+        );
+
+        foreach ($eligibleSlots as $slotId) {
+            $updateSlot->execute([
+                'id' => $slotId,
+                'memo' => $form['slot_memo'] !== '' ? $form['slot_memo'] : null,
+                'is_active' => $form['is_active'],
+            ]);
+
+            try {
+                $booking = $normalizedBooking;
+                if ($booking['client_email'] === '') {
+                    $booking['client_email'] = 'manual-booking+' . $slotId . '@local.invalid';
+                }
+                (new BookingService())->createConfirmedBooking($user, $slotId, $booking, false);
+                $successCount++;
+            } catch (\Throwable $exception) {
+                $failedMessages[] = $exception->getMessage();
+            }
+        }
+
+        if ($successCount === 0) {
+            Session::flash('error', $failedMessages[0] ?? '予約済みへの変更に失敗しました。');
+            redirect('/admin/availability-slots');
+        }
+
+        $message = $successCount . '件の空き枠を予約済みにしました。';
+        if ($bookedCount > 0) {
+            $message .= ' すでに予約済み ' . $bookedCount . ' 件は変更していません。';
+        }
+        if ($failedMessages !== []) {
+            $message .= ' 一部失敗: ' . $failedMessages[0];
         }
 
         Session::flash('success', $message);
@@ -849,6 +1010,16 @@ class AvailabilityController
         }
 
         return '/admin/availability-slots/create' . $this->buildWeekQuery($week);
+    }
+
+    private function selectedSlotIdsFromRequest(): array
+    {
+        $slotIds = array_values(array_unique(array_map(
+            static fn (mixed $id): int => (int) $id,
+            (array) ($_POST['slot_ids'] ?? [])
+        )));
+
+        return array_values(array_filter($slotIds, static fn (int $id): bool => $id > 0));
     }
 
     private function slotDetailFormFromRequest(): array

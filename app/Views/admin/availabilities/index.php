@@ -9,26 +9,33 @@
     </div>
 
     <div class="overflow-hidden rounded-3xl border border-line bg-white shadow-sm">
-        <form action="/admin/availability-slots/delete-selected" method="POST" id="slot-bulk-delete-form" class="hidden">
+        <form action="/admin/availability-slots/delete-selected" method="POST" id="slot-bulk-action-form" class="hidden">
             <?= csrf_field() ?>
         </form>
         <div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p class="text-sm font-medium text-ink">選択削除</p>
-                <p class="mt-1 text-xs text-slate-500">チェック一括削除は未予約枠だけが対象です。予約済みの予定は各行の削除ボタンから管理者のみ削除できます。</p>
+                <p class="text-sm font-medium text-ink">選択アクション</p>
+                <p class="mt-1 text-xs text-slate-500">選択した未予約枠に対して、非表示・予約済・削除をまとめて実行できます。</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <button type="button" id="select-all-slots-button" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
-                    全てを選択
-                </button>
+                <label class="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600">
+                    <input type="checkbox" id="select-all-slots-checkbox" class="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/20">
+                    全選択
+                </label>
                 <span id="selected-slot-count" class="rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500">0件選択中</span>
-                <button type="submit" id="delete-selected-slots-button" form="slot-bulk-delete-form" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400" disabled>
-                    選択した空き枠を削除
+                <button type="submit" id="hide-selected-slots-button" formaction="/admin/availability-slots/hide-selected" form="slot-bulk-action-form" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400" disabled>
+                    非表示
+                </button>
+                <button type="button" id="reserve-selected-slots-button" class="rounded-full bg-ink px-4 py-2 text-xs font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300" disabled>
+                    予約済
+                </button>
+                <button type="submit" id="delete-selected-slots-button" formaction="/admin/availability-slots/delete-selected" form="slot-bulk-action-form" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400" disabled>
+                    削除
                 </button>
             </div>
         </div>
         <div id="selected-slot-warning" class="hidden border-b border-rose-100 bg-rose-50/80 px-5 py-3 text-sm font-medium text-rose-700">
-            選択中の空き枠を削除すると元に戻せません。内容を確認して実行してください。
+            選択中の空き枠に一括操作を実行します。内容を確認して実行してください。
         </div>
         <div class="space-y-3 px-4 py-4 md:hidden">
             <?php foreach ($slots as $slot): ?>
@@ -48,8 +55,12 @@
                                     type="checkbox"
                                     name="slot_ids[]"
                                     value="<?= e((string) $slot['id']) ?>"
-                                    form="slot-bulk-delete-form"
+                                    form="slot-bulk-action-form"
                                     data-slot-id="<?= e((string) $slot['id']) ?>"
+                                    data-slot-start="<?= e(format_datetime($slot['start_datetime'])) ?>"
+                                    data-slot-end="<?= e(format_datetime($slot['end_datetime'], 'H:i')) ?>"
+                                    data-slot-memo="<?= e($slot['memo'] ?: '') ?>"
+                                    data-slot-active="<?= (int) $slot['is_active'] === 1 ? '1' : '0' ?>"
                                     class="slot-select-checkbox h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200"
                                 >
                                 選択
@@ -142,8 +153,12 @@
                                             type="checkbox"
                                             name="slot_ids[]"
                                             value="<?= e((string) $slot['id']) ?>"
-                                            form="slot-bulk-delete-form"
+                                            form="slot-bulk-action-form"
                                             data-slot-id="<?= e((string) $slot['id']) ?>"
+                                            data-slot-start="<?= e(format_datetime($slot['start_datetime'])) ?>"
+                                            data-slot-end="<?= e(format_datetime($slot['end_datetime'], 'H:i')) ?>"
+                                            data-slot-memo="<?= e($slot['memo'] ?: '') ?>"
+                                            data-slot-active="<?= (int) $slot['is_active'] === 1 ? '1' : '0' ?>"
                                             class="slot-select-checkbox h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-200"
                                         >
                                         選択
@@ -233,9 +248,9 @@
             <button type="button" id="list-reserve-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
         </div>
 
-        <form action="/admin/availability-slots/reserve" method="POST" id="list-reserve-form" class="space-y-5">
+        <form action="/admin/availability-slots/reserve-selected" method="POST" id="list-reserve-form" class="space-y-5">
             <?= csrf_field() ?>
-            <input type="hidden" name="slot_id" id="list-reserve-slot-id" value="">
+            <div id="list-reserve-slot-ids"></div>
             <input type="hidden" name="return_to" value="index">
             <input type="hidden" name="week" value="">
 
@@ -288,8 +303,10 @@
 
 <script>
     (() => {
-        const bulkForm = document.getElementById('slot-bulk-delete-form');
-        const selectAllButton = document.getElementById('select-all-slots-button');
+        const bulkForm = document.getElementById('slot-bulk-action-form');
+        const selectAllCheckbox = document.getElementById('select-all-slots-checkbox');
+        const hideSelectedButton = document.getElementById('hide-selected-slots-button');
+        const reserveSelectedButton = document.getElementById('reserve-selected-slots-button');
         const deleteSelectedButton = document.getElementById('delete-selected-slots-button');
         const selectedCountLabel = document.getElementById('selected-slot-count');
         const selectedSlotWarning = document.getElementById('selected-slot-warning');
@@ -297,7 +314,7 @@
         const listReserveModal = document.getElementById('list-reserve-modal');
         const listReserveClose = document.getElementById('list-reserve-close');
         const listReserveCancel = document.getElementById('list-reserve-cancel');
-        const listReserveSlotId = document.getElementById('list-reserve-slot-id');
+        const listReserveSlotIds = document.getElementById('list-reserve-slot-ids');
         const listReserveSlotPill = document.getElementById('list-reserve-slot-pill');
         const listReserveSlotMemo = document.getElementById('list-reserve-slot-memo');
         const listReserveSlotActive = document.getElementById('list-reserve-slot-active');
@@ -308,7 +325,7 @@
         const listReserveMessage = document.getElementById('list-reserve-message');
         const listReserveTriggers = Array.from(document.querySelectorAll('.list-reserve-trigger'));
 
-        if (!bulkForm || !selectAllButton || !deleteSelectedButton || !selectedCountLabel || !selectedSlotWarning) {
+        if (!bulkForm || !selectAllCheckbox || !hideSelectedButton || !reserveSelectedButton || !deleteSelectedButton || !selectedCountLabel || !selectedSlotWarning) {
             return;
         }
 
@@ -320,6 +337,30 @@
             ));
         }
 
+        function getSelectedSlots() {
+            const selectedIds = new Set(getSelectedSlotIds());
+            const uniqueSlots = new Map();
+
+            checkboxes
+                .filter((checkbox) => selectedIds.has(checkbox.dataset.slotId || checkbox.value))
+                .forEach((checkbox) => {
+                    const slotId = checkbox.dataset.slotId || checkbox.value;
+                    if (uniqueSlots.has(slotId)) {
+                        return;
+                    }
+
+                    uniqueSlots.set(slotId, {
+                        id: slotId,
+                        start: checkbox.dataset.slotStart || '',
+                        end: checkbox.dataset.slotEnd || '',
+                        memo: checkbox.dataset.slotMemo || '',
+                        isActive: (checkbox.dataset.slotActive || '1') === '1',
+                    });
+                });
+
+            return Array.from(uniqueSlots.values());
+        }
+
         function getUniqueSlotCount() {
             return new Set(checkboxes.map((checkbox) => checkbox.dataset.slotId || checkbox.value)).size;
         }
@@ -329,19 +370,19 @@
             const allSelected = selectedCount > 0 && selectedCount === getUniqueSlotCount();
 
             selectedCountLabel.textContent = `${selectedCount}件選択中`;
+            hideSelectedButton.disabled = selectedCount === 0;
+            reserveSelectedButton.disabled = selectedCount === 0;
             deleteSelectedButton.disabled = selectedCount === 0;
-            selectAllButton.textContent = allSelected ? '全てを解除' : '全てを選択';
-            deleteSelectedButton.textContent = selectedCount > 0
-                ? `選択した ${selectedCount} 件を削除`
-                : '選択した空き枠を削除';
+            selectAllCheckbox.checked = allSelected;
+            selectAllCheckbox.indeterminate = selectedCount > 0 && !allSelected;
             selectedSlotWarning.classList.toggle('hidden', selectedCount === 0);
             selectedCountLabel.className = selectedCount > 0
                 ? 'rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700'
                 : 'rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-500';
         }
 
-        selectAllButton.addEventListener('click', () => {
-            const shouldSelectAll = getSelectedSlotIds().length < getUniqueSlotCount();
+        selectAllCheckbox.addEventListener('change', () => {
+            const shouldSelectAll = selectAllCheckbox.checked;
             checkboxes.forEach((checkbox) => {
                 checkbox.checked = shouldSelectAll;
             });
@@ -360,8 +401,19 @@
                 return;
             }
 
-            if (!window.confirm(`選択した ${selectedCount} 件の空き枠を完全に削除します。\nこの操作は元に戻せません。実行しますか？`)) {
-                event.preventDefault();
+            const submitter = event.submitter;
+
+            if (submitter?.id === 'hide-selected-slots-button') {
+                if (!window.confirm(`選択した ${selectedCount} 件の空き枠を非表示にします。実行しますか？`)) {
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            if (submitter?.id === 'delete-selected-slots-button') {
+                if (!window.confirm(`選択した ${selectedCount} 件の空き枠を削除します。\nこの操作は元に戻せません。実行しますか？`)) {
+                    event.preventDefault();
+                }
             }
         });
 
@@ -374,15 +426,34 @@
             document.body.style.overflow = '';
         }
 
-        function openReserveModal(trigger) {
-            if (!listReserveModal || !trigger || !listReserveSlotId || !listReserveSlotPill || !listReserveSlotMemo || !listReserveSlotActive) {
+        function syncReserveSlotIds(slotIds) {
+            if (!listReserveSlotIds) {
                 return;
             }
 
-            listReserveSlotId.value = trigger.dataset.slotId || '';
-            listReserveSlotPill.textContent = `${trigger.dataset.slotStart || ''} - ${trigger.dataset.slotEnd || ''}`;
-            listReserveSlotMemo.value = trigger.dataset.slotMemo || '';
-            listReserveSlotActive.checked = (trigger.dataset.slotActive || '1') === '1';
+            listReserveSlotIds.innerHTML = '';
+            slotIds.forEach((slotId) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'slot_ids[]';
+                input.value = slotId;
+                listReserveSlotIds.appendChild(input);
+            });
+        }
+
+        function openReserveModal(slots) {
+            if (!listReserveModal || !listReserveSlotPill || !listReserveSlotMemo || !listReserveSlotActive || slots.length === 0) {
+                return;
+            }
+
+            const firstSlot = slots[0];
+            const slotIds = slots.map((slot) => slot.id);
+            syncReserveSlotIds(slotIds);
+            listReserveSlotPill.textContent = slots.length === 1
+                ? `${firstSlot.start} - ${firstSlot.end}`
+                : `${slots.length}件の空き枠を選択中`;
+            listReserveSlotMemo.value = slots.length === 1 ? firstSlot.memo : '';
+            listReserveSlotActive.checked = slots.every((slot) => slot.isActive);
             if (listReserveClientName) {
                 listReserveClientName.value = '';
                 listReserveClientName.focus();
@@ -405,7 +476,23 @@
         }
 
         listReserveTriggers.forEach((trigger) => {
-            trigger.addEventListener('click', () => openReserveModal(trigger));
+            trigger.addEventListener('click', () => openReserveModal([{
+                id: trigger.dataset.slotId || '',
+                start: trigger.dataset.slotStart || '',
+                end: trigger.dataset.slotEnd || '',
+                memo: trigger.dataset.slotMemo || '',
+                isActive: (trigger.dataset.slotActive || '1') === '1',
+            }]));
+        });
+
+        reserveSelectedButton.addEventListener('click', () => {
+            const selectedSlots = getSelectedSlots();
+
+            if (selectedSlots.length === 0) {
+                return;
+            }
+
+            openReserveModal(selectedSlots);
         });
 
         [listReserveClose, listReserveCancel].forEach((element) => {
