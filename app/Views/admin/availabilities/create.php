@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-$pageContainerClass = 'max-w-[1700px]';
 $timeStartHour = (int) $calendar['time_start_hour'];
 $timeEndHour = (int) $calendar['time_end_hour'];
 $slotStepMinutes = (int) $calendar['slot_step_minutes'];
