@@ -64,40 +64,42 @@
                 ['/admin/google', 'Google連携設定', 'google'],
             ];
             ?>
-            <div class="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-                <aside class="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/88 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur lg:sticky lg:top-6">
-                    <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.18),_transparent_65%)]"></div>
-                    <div class="relative">
-                        <div class="mb-4 rounded-[1.5rem] border border-slate-100 bg-slate-50/80 px-4 py-4">
-                            <p class="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400">Admin Console</p>
-                            <div class="mt-2 flex items-center gap-2 text-sm font-semibold text-ink">
-                                <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-                                管理メニュー
+            <div class="space-y-6">
+                <section class="sticky top-4 z-20">
+                    <div class="relative overflow-hidden rounded-[2rem] border border-white/75 bg-white/88 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.08)] backdrop-blur">
+                        <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.16),_transparent_62%)]"></div>
+                        <div class="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div class="px-2">
+                                <p class="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400">Admin Console</p>
+                                <div class="mt-1 flex items-center gap-2 text-sm font-semibold text-ink">
+                                    <span class="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                                    管理メニュー
+                                </div>
                             </div>
+                            <nav class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 pt-1 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                <?php foreach ($adminNavItems as [$href, $label, $matchKey]): ?>
+                                    <?php
+                                    $isActive = $currentPath === $href
+                                        || ($matchKey === 'availability' && $currentPath === '/admin/availability-slots')
+                                        || ($matchKey === 'planner' && $currentPath === '/admin/availability-slots/create')
+                                        || ($matchKey === 'bookings' && str_starts_with($currentPath, '/admin/bookings'))
+                                        || ($matchKey === 'google' && str_starts_with($currentPath, '/admin/google'))
+                                        || ($matchKey === 'overview' && $currentPath === '/admin');
+                                    ?>
+                                    <a
+                                        href="<?= e($href) ?>"
+                                        class="group flex shrink-0 items-center gap-3 rounded-full px-4 py-3 transition <?= $isActive ? 'bg-ink text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)]' : 'border border-slate-200/80 bg-white/80 text-slate-700 hover:border-brand/25 hover:bg-mist hover:text-ink' ?>"
+                                    >
+                                        <span class="font-medium whitespace-nowrap"><?= e($label) ?></span>
+                                        <span class="text-[10px] uppercase tracking-[0.18em] <?= $isActive ? 'text-slate-300' : 'text-slate-300 group-hover:text-brand' ?>">
+                                            <?= $isActive ? 'open' : 'go' ?>
+                                        </span>
+                                    </a>
+                                <?php endforeach; ?>
+                            </nav>
                         </div>
-                        <nav class="space-y-2 text-sm">
-                            <?php foreach ($adminNavItems as [$href, $label, $matchKey]): ?>
-                                <?php
-                                $isActive = $currentPath === $href
-                                    || ($matchKey === 'availability' && $currentPath === '/admin/availability-slots')
-                                    || ($matchKey === 'planner' && $currentPath === '/admin/availability-slots/create')
-                                    || ($matchKey === 'bookings' && str_starts_with($currentPath, '/admin/bookings'))
-                                    || ($matchKey === 'google' && str_starts_with($currentPath, '/admin/google'))
-                                    || ($matchKey === 'overview' && $currentPath === '/admin');
-                                ?>
-                                <a
-                                    href="<?= e($href) ?>"
-                                    class="group flex items-center justify-between rounded-[1.35rem] px-4 py-3 transition <?= $isActive ? 'bg-ink text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)]' : 'text-slate-700 hover:bg-mist hover:text-ink' ?>"
-                                >
-                                    <span class="font-medium"><?= e($label) ?></span>
-                                    <span class="text-[10px] uppercase tracking-[0.18em] <?= $isActive ? 'text-slate-300' : 'text-slate-300 group-hover:text-brand' ?>">
-                                        <?= $isActive ? 'open' : 'go' ?>
-                                    </span>
-                                </a>
-                            <?php endforeach; ?>
-                        </nav>
                     </div>
-                </aside>
+                </section>
                 <section class="min-w-0">
                     <?= $content ?>
                 </section>
