@@ -611,6 +611,120 @@ class AvailabilityController
         }
     }
 
+    public function duplicate(): void
+    {
+        $slotId = (int) ($_POST['slot_id'] ?? 0);
+        $week = trim((string) ($_POST['week'] ?? ''));
+        $targetDates = array_values(array_filter(array_map(
+            static fn (mixed $value): string => trim((string) $value),
+            (array) ($_POST['target_dates'] ?? [])
+        ), static fn (string $value): bool => $value !== ''));
+
+        if ($slotId <= 0) {
+            Session::flash('error', '複製元のスケジュールが見つかりません。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $targetDates = array_values(array_unique($targetDates));
+
+        if ($targetDates === []) {
+            Session::flash('error', '複製先の日付を1件以上入力してください。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        if (count($targetDates) > 5) {
+            Session::flash('error', '複製先の日付は最大5件までです。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $pdo = Database::connection();
+        $statement = $pdo->prepare('SELECT * FROM availability_slots WHERE id = :id LIMIT 1');
+        $statement->execute(['id' => $slotId]);
+        $sourceSlot = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if (!$sourceSlot) {
+            Session::flash('error', '複製元のスケジュールが見つかりません。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $sourceStart = new DateTimeImmutable($sourceSlot['start_datetime']);
+        $sourceEnd = new DateTimeImmutable($sourceSlot['end_datetime']);
+        $slotDurationSeconds = $sourceEnd->getTimestamp() - $sourceStart->getTimestamp();
+
+        if ($slotDurationSeconds <= 0) {
+            Session::flash('error', '複製元スケジュールの時間帯が不正です。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $slotsToCreate = [];
+        $errors = [];
+
+        foreach ($targetDates as $targetDate) {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $targetDate) !== 1) {
+                $errors[] = $targetDate . ' の日付形式が不正です。';
+                continue;
+            }
+
+            try {
+                $targetStart = new DateTimeImmutable($targetDate . ' ' . $sourceStart->format('H:i:s'));
+            } catch (\Throwable) {
+                $errors[] = $targetDate . ' の日付形式が不正です。';
+                continue;
+            }
+
+            $targetEnd = $targetStart->modify('+' . $slotDurationSeconds . ' seconds');
+            $conflictMessage = $this->findConflictMessage($pdo, $targetStart, $targetEnd);
+
+            if ($conflictMessage !== null) {
+                $errors[] = $conflictMessage;
+                continue;
+            }
+
+            $slotsToCreate[] = [
+                'start_datetime' => $targetStart->format('Y-m-d H:i:s'),
+                'end_datetime' => $targetEnd->format('Y-m-d H:i:s'),
+                'duration_minutes' => (int) $sourceSlot['duration_minutes'],
+                'is_active' => (int) $sourceSlot['is_active'],
+                'memo' => $sourceSlot['memo'],
+            ];
+        }
+
+        if ($slotsToCreate === []) {
+            Session::flash('error', $errors[0] ?? '複製できる日付がありませんでした。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $pdo->beginTransaction();
+
+        try {
+            $insert = $pdo->prepare(
+                'INSERT INTO availability_slots (start_datetime, end_datetime, duration_minutes, is_active, memo, created_at, updated_at)
+                 VALUES (:start_datetime, :end_datetime, :duration_minutes, :is_active, :memo, NOW(), NOW())'
+            );
+
+            foreach ($slotsToCreate as $slot) {
+                $insert->execute($slot);
+            }
+
+            $pdo->commit();
+        } catch (\Throwable) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            Session::flash('error', 'スケジュールの複製に失敗しました。');
+            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+        }
+
+        $message = count($slotsToCreate) . '件のスケジュールを複製しました。';
+        if ($errors !== []) {
+            $message .= ' 複製できなかった日付: ' . $errors[0];
+        }
+
+        Session::flash('success', $message);
+        redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+    }
+
     private function shiftDateTime(DateTimeImmutable $dateTime, string $recurrenceType, int $offset): DateTimeImmutable
     {
         if ($offset === 0 || $recurrenceType === 'single') {

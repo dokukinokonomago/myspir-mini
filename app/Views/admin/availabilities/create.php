@@ -476,6 +476,9 @@ foreach ($calendar['days'] as $day) {
                 </div>
 
                 <div class="flex flex-wrap justify-end gap-3">
+                    <button type="button" id="event-detail-duplicate-button" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+                        予定を複製
+                    </button>
                     <button type="submit" id="event-detail-delete-button" formaction="/admin/availability-slots/delete" formmethod="POST" class="rounded-2xl border border-rose-200 px-5 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50">
                         削除
                     </button>
@@ -484,6 +487,54 @@ foreach ($calendar['days'] as $day) {
                         予約済
                     </button>
                 </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="duplicate-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/35 px-4 py-6">
+    <div class="mx-auto my-6 max-h-[calc(100vh-3rem)] max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl">
+        <div class="mb-5 flex items-start justify-between gap-4">
+            <div>
+                <p class="text-sm uppercase tracking-[0.2em] text-brand">Duplicate Schedule</p>
+                <h2 class="mt-2 text-2xl font-semibold text-ink">予定を複製</h2>
+                <p id="duplicate-summary" class="mt-3 text-sm leading-6 text-slate-500">複製先の日付を最大5件まで指定できます。</p>
+            </div>
+            <button type="button" id="duplicate-close" class="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-600">閉じる</button>
+        </div>
+
+        <form action="/admin/availability-slots/duplicate" method="POST" class="space-y-5">
+            <?= csrf_field() ?>
+            <input type="hidden" name="slot_id" id="duplicate-slot-id" value="">
+            <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
+
+            <div class="rounded-3xl bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Source Schedule</p>
+                <p id="duplicate-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
+                <p class="mt-2 text-sm text-slate-500">時間帯・メモ・公開状態を引き継いで、新しい日付へ空き枠としてコピーします。予約情報は複製しません。</p>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200 p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Target Dates</p>
+                        <p class="mt-2 text-sm text-slate-500">最大5日まで指定できます。空欄は無視されます。</p>
+                    </div>
+                    <span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500">最大5日</span>
+                </div>
+                <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                    <?php for ($duplicateIndex = 0; $duplicateIndex < 5; $duplicateIndex++): ?>
+                        <label class="block">
+                            <span class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">日付 <?= e((string) ($duplicateIndex + 1)) ?></span>
+                            <input type="date" name="target_dates[]" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand">
+                        </label>
+                    <?php endfor; ?>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-3">
+                <button type="button" id="duplicate-clear" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">日付をクリア</button>
+                <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">複製する</button>
             </div>
         </form>
     </div>
@@ -709,9 +760,17 @@ foreach ($calendar['days'] as $day) {
         const eventDetailGoogleEventId = document.getElementById('event-detail-google-event-id');
         const eventDetailMeetLink = document.getElementById('event-detail-meet-link');
         const eventDetailMeetEmpty = document.getElementById('event-detail-meet-empty');
+        const eventDetailDuplicateButton = document.getElementById('event-detail-duplicate-button');
         const eventDetailDeleteButton = document.getElementById('event-detail-delete-button');
         const eventDetailReserveButton = document.getElementById('event-detail-reserve-button');
         const eventDetailTriggers = Array.from(document.querySelectorAll('.event-detail-trigger'));
+        const duplicateModal = document.getElementById('duplicate-modal');
+        const duplicateCloseButton = document.getElementById('duplicate-close');
+        const duplicateClearButton = document.getElementById('duplicate-clear');
+        const duplicateSlotIdInput = document.getElementById('duplicate-slot-id');
+        const duplicateSlotPill = document.getElementById('duplicate-slot-pill');
+        const duplicateSummary = document.getElementById('duplicate-summary');
+        const duplicateDateInputs = Array.from(document.querySelectorAll('input[name="target_dates[]"]'));
         const deleteModal = document.getElementById('delete-modal');
         const deleteModalCloseButton = document.getElementById('delete-modal-close');
         const deleteClearButton = document.getElementById('delete-clear');
@@ -866,6 +925,14 @@ foreach ($calendar['days'] as $day) {
                 closeEventDetailModal();
             }
         });
+
+        if (duplicateModal) {
+            duplicateModal.addEventListener('click', (event) => {
+                if (event.target === duplicateModal) {
+                    closeDuplicateModal();
+                }
+            });
+        }
 
         eventDetailCloseButton.addEventListener('click', closeEventDetailModal);
 
@@ -1249,7 +1316,8 @@ foreach ($calendar['days'] as $day) {
         function syncBodyScrollLock() {
             const hasOpenModal = !modal.classList.contains('hidden')
                 || !deleteModal.classList.contains('hidden')
-                || !eventDetailModal.classList.contains('hidden');
+                || !eventDetailModal.classList.contains('hidden')
+                || !duplicateModal.classList.contains('hidden');
             document.body.style.overflow = hasOpenModal ? 'hidden' : '';
         }
 
@@ -1269,6 +1337,30 @@ foreach ($calendar['days'] as $day) {
 
         function closeEventDetailModal(syncScrollLock = true) {
             eventDetailModal.classList.add('hidden');
+            if (syncScrollLock) {
+                syncBodyScrollLock();
+            }
+        }
+
+        function openDuplicateModal() {
+            if (!duplicateModal || !duplicateSlotIdInput || !eventDetailSlotIdInput.value) {
+                return;
+            }
+
+            duplicateSlotIdInput.value = eventDetailSlotIdInput.value;
+            duplicateSlotPill.textContent = eventDetailSlotPill.textContent;
+            duplicateSummary.textContent = '複製先の日付を最大5件まで指定できます。元枠の時間帯・メモ・公開状態を新しい日付へコピーします。';
+            duplicateDateInputs.forEach((input) => {
+                input.value = '';
+            });
+
+            closeEventDetailModal(false);
+            duplicateModal.classList.remove('hidden');
+            syncBodyScrollLock();
+        }
+
+        function closeDuplicateModal(syncScrollLock = true) {
+            duplicateModal.classList.add('hidden');
             if (syncScrollLock) {
                 syncBodyScrollLock();
             }
@@ -1332,6 +1424,22 @@ foreach ($calendar['days'] as $day) {
                 if (!window.confirm(message)) {
                     event.preventDefault();
                 }
+            });
+        }
+
+        if (eventDetailDuplicateButton) {
+            eventDetailDuplicateButton.addEventListener('click', openDuplicateModal);
+        }
+
+        if (duplicateCloseButton) {
+            duplicateCloseButton.addEventListener('click', () => closeDuplicateModal());
+        }
+
+        if (duplicateClearButton) {
+            duplicateClearButton.addEventListener('click', () => {
+                duplicateDateInputs.forEach((input) => {
+                    input.value = '';
+                });
             });
         }
 
