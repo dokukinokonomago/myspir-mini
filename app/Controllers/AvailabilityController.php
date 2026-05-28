@@ -376,23 +376,11 @@ class AvailabilityController
 
     public function reserveSelected(): void
     {
-        $slotIds = $this->selectedSlotIdsFromRequest();
-        $form = $this->slotDetailFormFromRequest();
-
-        if ($slotIds === []) {
-            Session::flash('error', '予約済みにする空き枠を選択してください。');
-            redirect('/admin/availability-slots');
-        }
-
-        if ($form['client_name'] === '') {
-            Session::flash('error', '予約済みにするには氏名を入力してください。');
-            redirect('/admin/availability-slots');
-        }
-
-        if ($form['client_email'] !== '' && !filter_var($form['client_email'], FILTER_VALIDATE_EMAIL)) {
-            Session::flash('error', 'メールアドレスの形式が不正です。');
-            redirect('/admin/availability-slots');
-        }
+        $reservations = $this->selectedReservationsFromRequest();
+        $slotIds = array_values(array_unique(array_map(
+            static fn (array $reservation): int => (int) $reservation['slot_id'],
+            $reservations
+        )));
 
         $user = Auth::user();
         if (!$user) {
@@ -400,9 +388,14 @@ class AvailabilityController
             redirect('/admin/login');
         }
 
+        if ($reservations === [] || $slotIds === []) {
+            Session::flash('error', '予約済みにする空き枠を選択してください。');
+            redirect('/admin/availability-slots');
+        }
+
         $placeholders = implode(', ', array_fill(0, count($slotIds), '?'));
         $statement = Database::connection()->prepare(
-            "SELECT s.id, s.memo, s.is_active, b.id AS booking_id
+            "SELECT s.id, s.memo, s.is_active, s.start_datetime, s.end_datetime, b.id AS booking_id
              FROM availability_slots s
              LEFT JOIN bookings b ON b.availability_slot_id = s.id
              WHERE s.id IN ({$placeholders})
@@ -410,46 +403,56 @@ class AvailabilityController
         );
         $statement->execute($slotIds);
 
-        $eligibleSlots = [];
-        $bookedCount = 0;
-
+        $slotMap = [];
         foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $slot) {
+            $slotMap[(int) $slot['id']] = $slot;
+        }
+
+        $successCount = 0;
+        $failedMessages = [];
+        $bookedCount = 0;
+        $updateSlot = Database::connection()->prepare(
+            'UPDATE availability_slots SET memo = :memo, is_active = :is_active, updated_at = NOW() WHERE id = :id'
+        );
+
+        foreach ($reservations as $reservation) {
+            $slotId = (int) $reservation['slot_id'];
+            $slot = $slotMap[$slotId] ?? null;
+
+            if (!$slot) {
+                $failedMessages[] = '対象の空き枠が見つかりません。';
+                continue;
+            }
+
             if ($slot['booking_id']) {
                 $bookedCount++;
                 continue;
             }
 
-            $eligibleSlots[] = (int) $slot['id'];
-        }
+            if ($reservation['client_name'] === '') {
+                $failedMessages[] = format_datetime($slot['start_datetime']) . ' の氏名を入力してください。';
+                continue;
+            }
 
-        if ($eligibleSlots === []) {
-            Session::flash('error', '選択した空き枠はすべて予約済みです。');
-            redirect('/admin/availability-slots');
-        }
+            if ($reservation['client_email'] !== '' && !filter_var($reservation['client_email'], FILTER_VALIDATE_EMAIL)) {
+                $failedMessages[] = format_datetime($slot['start_datetime']) . ' のメールアドレス形式が不正です。';
+                continue;
+            }
 
-        $normalizedBooking = [
-            'client_name' => $form['client_name'],
-            'company_name' => $form['company_name'],
-            'client_email' => $form['client_email'],
-            'client_phone' => $form['client_phone'] !== '' ? $form['client_phone'] : '-',
-            'message' => $form['message'],
-        ];
-
-        $successCount = 0;
-        $failedMessages = [];
-        $updateSlot = Database::connection()->prepare(
-            'UPDATE availability_slots SET memo = :memo, is_active = :is_active, updated_at = NOW() WHERE id = :id'
-        );
-
-        foreach ($eligibleSlots as $slotId) {
             $updateSlot->execute([
                 'id' => $slotId,
-                'memo' => $form['slot_memo'] !== '' ? $form['slot_memo'] : null,
-                'is_active' => $form['is_active'],
+                'memo' => $reservation['slot_memo'] !== '' ? $reservation['slot_memo'] : null,
+                'is_active' => $reservation['is_active'],
             ]);
 
             try {
-                $booking = $normalizedBooking;
+                $booking = [
+                    'client_name' => $reservation['client_name'],
+                    'company_name' => $reservation['company_name'],
+                    'client_email' => $reservation['client_email'],
+                    'client_phone' => $reservation['client_phone'] !== '' ? $reservation['client_phone'] : '-',
+                    'message' => $reservation['message'],
+                ];
                 if ($booking['client_email'] === '') {
                     $booking['client_email'] = 'manual-booking+' . $slotId . '@local.invalid';
                 }
@@ -1020,6 +1023,60 @@ class AvailabilityController
         )));
 
         return array_values(array_filter($slotIds, static fn (int $id): bool => $id > 0));
+    }
+
+    private function selectedReservationsFromRequest(): array
+    {
+        $payload = trim((string) ($_POST['bookings_payload_json'] ?? ''));
+
+        if ($payload === '') {
+            $form = $this->slotDetailFormFromRequest();
+
+            return array_map(
+                static fn (int $slotId): array => [
+                    'slot_id' => $slotId,
+                    'client_name' => $form['client_name'],
+                    'company_name' => $form['company_name'],
+                    'client_email' => $form['client_email'],
+                    'client_phone' => $form['client_phone'],
+                    'message' => $form['message'],
+                    'slot_memo' => $form['slot_memo'],
+                    'is_active' => $form['is_active'],
+                ],
+                $this->selectedSlotIdsFromRequest()
+            );
+        }
+
+        $decoded = json_decode($payload, true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $reservations = [];
+        foreach ($decoded as $reservation) {
+            if (!is_array($reservation)) {
+                continue;
+            }
+
+            $slotId = (int) ($reservation['slot_id'] ?? 0);
+            if ($slotId <= 0) {
+                continue;
+            }
+
+            $reservations[$slotId] = [
+                'slot_id' => $slotId,
+                'client_name' => trim((string) ($reservation['client_name'] ?? '')),
+                'company_name' => trim((string) ($reservation['company_name'] ?? '')),
+                'client_email' => trim((string) ($reservation['client_email'] ?? '')),
+                'client_phone' => trim((string) ($reservation['client_phone'] ?? '')),
+                'message' => trim((string) ($reservation['message'] ?? '')),
+                'slot_memo' => trim((string) ($reservation['slot_memo'] ?? '')),
+                'is_active' => (string) ($reservation['is_active'] ?? '1') === '1' ? 1 : 0,
+            ];
+        }
+
+        return array_values($reservations);
     }
 
     private function slotDetailFormFromRequest(): array

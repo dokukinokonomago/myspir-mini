@@ -251,45 +251,67 @@
         <form action="/admin/availability-slots/reserve-selected" method="POST" id="list-reserve-form" class="space-y-5">
             <?= csrf_field() ?>
             <div id="list-reserve-slot-ids"></div>
+            <input type="hidden" name="bookings_payload_json" id="list-reserve-payload-json" value="">
             <input type="hidden" name="return_to" value="index">
             <input type="hidden" name="week" value="">
 
             <div class="rounded-3xl bg-slate-50 p-4">
-                <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Slot</p>
-                <p id="list-reserve-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
-                <p class="mt-2 text-sm text-slate-500">氏名は必須です。登録後は Google Calendar と Google Meet を自動作成します。</p>
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Selected Slot</p>
+                        <p id="list-reserve-slot-pill" class="mt-2 text-lg font-semibold text-ink">未選択</p>
+                    </div>
+                    <span id="list-reserve-slot-count" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500">0件</span>
+                </div>
+                <p id="list-reserve-summary" class="mt-2 text-sm leading-6 text-slate-500">一覧から直接予約情報を入力して、予約済みに変更できます。</p>
+            </div>
+
+            <div class="rounded-3xl border border-slate-200 p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Slot Tabs</p>
+                        <p class="mt-2 text-sm text-slate-500">選択した枠ごとにタブを切り替えて、内容を個別入力できます。</p>
+                    </div>
+                </div>
+                <div id="list-reserve-tab-list" class="mt-4 flex flex-wrap gap-2"></div>
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <div class="sm:col-span-2">
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        <span class="font-medium text-ink">現在の枠:</span>
+                        <span id="list-reserve-active-label">未選択</span>
+                    </div>
+                </div>
+                <div class="sm:col-span-2">
                     <label for="list-reserve-client-name" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">氏名</label>
-                    <input type="text" id="list-reserve-client-name" name="client_name" required class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="山田 太郎">
+                    <input type="text" id="list-reserve-client-name" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="山田 太郎">
                 </div>
                 <div>
                     <label for="list-reserve-company-name" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">会社名</label>
-                    <input type="text" id="list-reserve-company-name" name="company_name" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="株式会社サンプル">
+                    <input type="text" id="list-reserve-company-name" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="株式会社サンプル">
                 </div>
                 <div>
                     <label for="list-reserve-client-email" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">メールアドレス</label>
-                    <input type="email" id="list-reserve-client-email" name="client_email" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="client@example.com">
+                    <input type="email" id="list-reserve-client-email" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="client@example.com">
                 </div>
                 <div>
                     <label for="list-reserve-client-phone" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">電話番号</label>
-                    <input type="text" id="list-reserve-client-phone" name="client_phone" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="090-1234-5678">
+                    <input type="text" id="list-reserve-client-phone" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="090-1234-5678">
                 </div>
                 <div class="flex items-center">
                     <label class="inline-flex items-center gap-2 text-sm text-slate-600">
-                        <input type="checkbox" id="list-reserve-slot-active" name="is_active" class="h-4 w-4 rounded border-slate-300 text-brand" checked>
-                        予約後も公開状態を維持する
+                        <input type="checkbox" id="list-reserve-slot-active" class="h-4 w-4 rounded border-slate-300 text-brand" checked>
+                        公開状態を維持
                     </label>
                 </div>
                 <div class="sm:col-span-2">
                     <label for="list-reserve-slot-memo" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">空き枠メモ</label>
-                    <textarea id="list-reserve-slot-memo" name="slot_memo" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="この枠のメモ"></textarea>
+                    <textarea id="list-reserve-slot-memo" rows="3" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="この枠のメモ"></textarea>
                 </div>
                 <div class="sm:col-span-2">
                     <label for="list-reserve-message" class="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">相談内容 / メモ</label>
-                    <textarea id="list-reserve-message" name="message" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="予約内容やメモを入力"></textarea>
+                    <textarea id="list-reserve-message" rows="4" class="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-brand" placeholder="予約内容やメモを入力"></textarea>
                 </div>
             </div>
 
@@ -314,8 +336,14 @@
         const listReserveModal = document.getElementById('list-reserve-modal');
         const listReserveClose = document.getElementById('list-reserve-close');
         const listReserveCancel = document.getElementById('list-reserve-cancel');
+        const listReserveForm = document.getElementById('list-reserve-form');
         const listReserveSlotIds = document.getElementById('list-reserve-slot-ids');
+        const listReservePayloadJson = document.getElementById('list-reserve-payload-json');
         const listReserveSlotPill = document.getElementById('list-reserve-slot-pill');
+        const listReserveSlotCount = document.getElementById('list-reserve-slot-count');
+        const listReserveSummary = document.getElementById('list-reserve-summary');
+        const listReserveTabList = document.getElementById('list-reserve-tab-list');
+        const listReserveActiveLabel = document.getElementById('list-reserve-active-label');
         const listReserveSlotMemo = document.getElementById('list-reserve-slot-memo');
         const listReserveSlotActive = document.getElementById('list-reserve-slot-active');
         const listReserveClientName = document.getElementById('list-reserve-client-name');
@@ -324,6 +352,8 @@
         const listReserveClientPhone = document.getElementById('list-reserve-client-phone');
         const listReserveMessage = document.getElementById('list-reserve-message');
         const listReserveTriggers = Array.from(document.querySelectorAll('.list-reserve-trigger'));
+        let reserveTabState = [];
+        let activeReserveTabIndex = 0;
 
         if (!bulkForm || !selectAllCheckbox || !hideSelectedButton || !reserveSelectedButton || !deleteSelectedButton || !selectedCountLabel || !selectedSlotWarning) {
             return;
@@ -426,6 +456,80 @@
             document.body.style.overflow = '';
         }
 
+        function persistActiveReserveTab() {
+            if (!reserveTabState[activeReserveTabIndex]) {
+                return;
+            }
+
+            reserveTabState[activeReserveTabIndex] = {
+                ...reserveTabState[activeReserveTabIndex],
+                clientName: listReserveClientName?.value.trim() || '',
+                companyName: listReserveCompanyName?.value.trim() || '',
+                clientEmail: listReserveClientEmail?.value.trim() || '',
+                clientPhone: listReserveClientPhone?.value.trim() || '',
+                slotMemo: listReserveSlotMemo?.value.trim() || '',
+                message: listReserveMessage?.value.trim() || '',
+                isActive: Boolean(listReserveSlotActive?.checked),
+            };
+        }
+
+        function renderReserveTabs() {
+            if (!listReserveTabList) {
+                return;
+            }
+
+            listReserveTabList.innerHTML = '';
+
+            reserveTabState.forEach((slot, index) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = index === activeReserveTabIndex
+                    ? 'rounded-full bg-ink px-4 py-2 text-xs font-medium text-white'
+                    : 'rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100';
+                button.textContent = `枠${index + 1}`;
+                button.addEventListener('click', () => {
+                    persistActiveReserveTab();
+                    activeReserveTabIndex = index;
+                    hydrateActiveReserveTab();
+                });
+                listReserveTabList.appendChild(button);
+            });
+        }
+
+        function hydrateActiveReserveTab() {
+            const slot = reserveTabState[activeReserveTabIndex];
+            if (!slot) {
+                return;
+            }
+
+            if (listReserveActiveLabel) {
+                listReserveActiveLabel.textContent = `${slot.start} - ${slot.end}`;
+            }
+            if (listReserveClientName) {
+                listReserveClientName.value = slot.clientName || '';
+            }
+            if (listReserveCompanyName) {
+                listReserveCompanyName.value = slot.companyName || '';
+            }
+            if (listReserveClientEmail) {
+                listReserveClientEmail.value = slot.clientEmail || '';
+            }
+            if (listReserveClientPhone) {
+                listReserveClientPhone.value = slot.clientPhone || '';
+            }
+            if (listReserveSlotMemo) {
+                listReserveSlotMemo.value = slot.slotMemo || '';
+            }
+            if (listReserveMessage) {
+                listReserveMessage.value = slot.message || '';
+            }
+            if (listReserveSlotActive) {
+                listReserveSlotActive.checked = Boolean(slot.isActive);
+            }
+
+            renderReserveTabs();
+        }
+
         function syncReserveSlotIds(slotIds) {
             if (!listReserveSlotIds) {
                 return;
@@ -441,6 +545,44 @@
             });
         }
 
+        function buildReservePayload() {
+            persistActiveReserveTab();
+
+            return reserveTabState.map((slot) => ({
+                slot_id: slot.id,
+                client_name: slot.clientName || '',
+                company_name: slot.companyName || '',
+                client_email: slot.clientEmail || '',
+                client_phone: slot.clientPhone || '',
+                slot_memo: slot.slotMemo || '',
+                message: slot.message || '',
+                is_active: slot.isActive ? 1 : 0,
+            }));
+        }
+
+        function validateReservePayload(payload) {
+            for (let index = 0; index < payload.length; index += 1) {
+                const item = payload[index];
+                if (!item.client_name.trim()) {
+                    activeReserveTabIndex = index;
+                    hydrateActiveReserveTab();
+                    window.alert(`枠${index + 1} の氏名を入力してください。`);
+                    listReserveClientName?.focus();
+                    return false;
+                }
+
+                if (item.client_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.client_email)) {
+                    activeReserveTabIndex = index;
+                    hydrateActiveReserveTab();
+                    window.alert(`枠${index + 1} のメールアドレス形式が不正です。`);
+                    listReserveClientEmail?.focus();
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         function openReserveModal(slots) {
             if (!listReserveModal || !listReserveSlotPill || !listReserveSlotMemo || !listReserveSlotActive || slots.length === 0) {
                 return;
@@ -449,27 +591,35 @@
             const firstSlot = slots[0];
             const slotIds = slots.map((slot) => slot.id);
             syncReserveSlotIds(slotIds);
+            reserveTabState = slots.map((slot) => ({
+                id: slot.id,
+                start: slot.start,
+                end: slot.end,
+                clientName: '',
+                companyName: '',
+                clientEmail: '',
+                clientPhone: '',
+                slotMemo: slot.memo || '',
+                message: '',
+                isActive: Boolean(slot.isActive),
+            }));
+            activeReserveTabIndex = 0;
             listReserveSlotPill.textContent = slots.length === 1
                 ? `${firstSlot.start} - ${firstSlot.end}`
                 : `${slots.length}件の空き枠を選択中`;
-            listReserveSlotMemo.value = slots.length === 1 ? firstSlot.memo : '';
-            listReserveSlotActive.checked = slots.every((slot) => slot.isActive);
-            if (listReserveClientName) {
-                listReserveClientName.value = '';
-                listReserveClientName.focus();
+            if (listReserveSlotCount) {
+                listReserveSlotCount.textContent = `${slots.length}件`;
             }
-            if (listReserveCompanyName) {
-                listReserveCompanyName.value = '';
+            if (listReserveSummary) {
+                listReserveSummary.textContent = slots.length === 1
+                    ? 'この空き枠の予約情報を入力して、予約済みに変更します。'
+                    : '選択した枠ごとにタブを切り替えて、予約情報を個別入力できます。';
             }
-            if (listReserveClientEmail) {
-                listReserveClientEmail.value = '';
+            if (listReservePayloadJson) {
+                listReservePayloadJson.value = '';
             }
-            if (listReserveClientPhone) {
-                listReserveClientPhone.value = '';
-            }
-            if (listReserveMessage) {
-                listReserveMessage.value = '';
-            }
+            hydrateActiveReserveTab();
+            listReserveClientName?.focus();
 
             listReserveModal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
@@ -509,6 +659,18 @@
                 }
             });
         }
+
+        listReserveForm?.addEventListener('submit', (event) => {
+            const payload = buildReservePayload();
+            if (!validateReservePayload(payload)) {
+                event.preventDefault();
+                return;
+            }
+
+            if (listReservePayloadJson) {
+                listReservePayloadJson.value = JSON.stringify(payload);
+            }
+        });
 
         syncSelectionState();
     })();
