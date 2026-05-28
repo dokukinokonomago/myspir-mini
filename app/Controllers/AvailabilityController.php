@@ -397,22 +397,21 @@ class AvailabilityController
     public function reserve(): void
     {
         $slotId = (int) ($_POST['slot_id'] ?? 0);
-        $week = trim((string) ($_POST['week'] ?? ''));
         $form = $this->slotDetailFormFromRequest();
 
         if ($slotId <= 0) {
             Session::flash('error', '対象のスケジュールが見つかりません。');
-            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+            redirect($this->reserveRedirectPath());
         }
 
         if ($form['client_name'] === '') {
             Session::flash('error', '予約済みにするには氏名を入力してください。');
-            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+            redirect($this->reserveRedirectPath());
         }
 
         if ($form['client_email'] !== '' && !filter_var($form['client_email'], FILTER_VALIDATE_EMAIL)) {
             Session::flash('error', 'メールアドレスの形式が不正です。');
-            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+            redirect($this->reserveRedirectPath());
         }
 
         $user = Auth::user();
@@ -444,7 +443,7 @@ class AvailabilityController
             redirect('/admin/bookings/' . (int) $result['booking_id']);
         } catch (\Throwable $exception) {
             Session::flash('error', $exception->getMessage());
-            redirect('/admin/availability-slots/create' . $this->buildWeekQuery($week));
+            redirect($this->reserveRedirectPath());
         }
     }
 
@@ -838,6 +837,18 @@ class AvailabilityController
         }
 
         return '/admin/availability-slots';
+    }
+
+    private function reserveRedirectPath(): string
+    {
+        $returnTo = trim((string) ($_POST['return_to'] ?? 'create'));
+        $week = trim((string) ($_POST['week'] ?? ''));
+
+        if ($returnTo === 'index') {
+            return '/admin/availability-slots';
+        }
+
+        return '/admin/availability-slots/create' . $this->buildWeekQuery($week);
     }
 
     private function slotDetailFormFromRequest(): array
