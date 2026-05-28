@@ -8,6 +8,7 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Session;
 use App\Services\BookingService;
+use App\Services\GoogleCalendarService;
 use DateTimeImmutable;
 use PDO;
 
@@ -190,32 +191,13 @@ class AvailabilityController
 
     public function destroy(string $id): void
     {
-        $pdo = Database::connection();
-        $statement = $pdo->prepare(
-            "SELECT s.id, b.id AS booking_id
-             FROM availability_slots s
-             LEFT JOIN bookings b ON b.availability_slot_id = s.id
-             WHERE s.id = :id
-             LIMIT 1"
-        );
-        $statement->execute(['id' => (int) $id]);
-        $slot = $statement->fetch();
+        $this->deleteSlotAndRedirect((int) $id);
+    }
 
-        if (!$slot) {
-            Session::flash('error', '削除対象の空き枠が見つかりません。');
-            redirect('/admin/availability-slots');
-        }
-
-        if ($slot['booking_id']) {
-            Session::flash('error', '予約済みの空き枠は削除できません。');
-            redirect('/admin/availability-slots');
-        }
-
-        $delete = $pdo->prepare('DELETE FROM availability_slots WHERE id = :id');
-        $delete->execute(['id' => (int) $id]);
-
-        Session::flash('success', '空き枠を削除しました。');
-        redirect('/admin/availability-slots');
+    public function destroyFromRequest(): void
+    {
+        $slotId = (int) ($_POST['slot_id'] ?? 0);
+        $this->deleteSlotAndRedirect($slotId);
     }
 
     public function bulkDestroy(): void
@@ -742,7 +724,7 @@ class AvailabilityController
                 'google_event_id' => $row['google_event_id'] ?: '',
                 'google_meet_url' => $row['google_meet_url'] ?: '',
                 'is_active' => (int) $row['is_active'] === 1,
-                'can_delete' => $row['booking_id'] ? false : true,
+                'can_delete' => true,
             ];
         }
 
@@ -783,6 +765,79 @@ class AvailabilityController
         ]);
 
         return (int) $statement->fetchColumn();
+    }
+
+    private function deleteSlotAndRedirect(int $slotId): void
+    {
+        if ($slotId <= 0) {
+            Session::flash('error', '削除対象の空き枠が見つかりません。');
+            redirect($this->destroyRedirectPath());
+        }
+
+        $pdo = Database::connection();
+        $statement = $pdo->prepare(
+            "SELECT s.id,
+                    b.id AS booking_id,
+                    b.google_event_id
+             FROM availability_slots s
+             LEFT JOIN bookings b ON b.availability_slot_id = s.id
+             WHERE s.id = :id
+             LIMIT 1"
+        );
+        $statement->execute(['id' => $slotId]);
+        $slot = $statement->fetch(PDO::FETCH_ASSOC);
+
+        if (!$slot) {
+            Session::flash('error', '削除対象の空き枠が見つかりません。');
+            redirect($this->destroyRedirectPath());
+        }
+
+        if ($slot['booking_id']) {
+            $user = Auth::user();
+            if ($user && $slot['google_event_id']) {
+                (new GoogleCalendarService())->deleteEvent($user, (string) $slot['google_event_id']);
+            }
+
+            $pdo->beginTransaction();
+
+            try {
+                $deleteBooking = $pdo->prepare('DELETE FROM bookings WHERE id = :id');
+                $deleteBooking->execute(['id' => (int) $slot['booking_id']]);
+
+                $deleteSlot = $pdo->prepare('DELETE FROM availability_slots WHERE id = :id');
+                $deleteSlot->execute(['id' => (int) $slot['id']]);
+
+                $pdo->commit();
+            } catch (\Throwable) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+
+                Session::flash('error', '予約済み予定の削除に失敗しました。');
+                redirect($this->destroyRedirectPath());
+            }
+
+            Session::flash('success', '予約済み予定を削除しました。Google カレンダー上の予定も削除しています。');
+            redirect($this->destroyRedirectPath());
+        }
+
+        $delete = $pdo->prepare('DELETE FROM availability_slots WHERE id = :id');
+        $delete->execute(['id' => $slotId]);
+
+        Session::flash('success', '空き枠を削除しました。');
+        redirect($this->destroyRedirectPath());
+    }
+
+    private function destroyRedirectPath(): string
+    {
+        $returnTo = trim((string) ($_POST['return_to'] ?? 'index'));
+        $week = trim((string) ($_POST['week'] ?? ''));
+
+        if ($returnTo === 'create') {
+            return '/admin/availability-slots/create' . $this->buildWeekQuery($week);
+        }
+
+        return '/admin/availability-slots';
     }
 
     private function slotDetailFormFromRequest(): array

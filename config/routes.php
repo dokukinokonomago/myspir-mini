@@ -26,6 +26,7 @@ $router->add('GET', '/admin/availability-slots/create', [AvailabilityController:
 $router->add('POST', '/admin/availability-slots', [AvailabilityController::class, 'store'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/bulk-delete', [AvailabilityController::class, 'bulkDestroy'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/delete-selected', [AvailabilityController::class, 'destroySelected'], ['auth' => true]);
+$router->add('POST', '/admin/availability-slots/delete', [AvailabilityController::class, 'destroyFromRequest'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/details', [AvailabilityController::class, 'updateDetails'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/reserve', [AvailabilityController::class, 'reserve'], ['auth' => true]);
 $router->add('POST', '/admin/availability-slots/{id}/toggle', [AvailabilityController::class, 'toggle'], ['auth' => true]);

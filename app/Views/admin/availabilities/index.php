@@ -15,7 +15,7 @@
         <div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
                 <p class="text-sm font-medium text-ink">選択削除</p>
-                <p class="mt-1 text-xs text-slate-500">未予約の空き枠だけチェックできます。予約済み枠は選択できません。</p>
+                <p class="mt-1 text-xs text-slate-500">チェック一括削除は未予約枠だけが対象です。予約済みの予定は各行の削除ボタンから管理者のみ削除できます。</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" id="select-all-slots-button" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
@@ -55,7 +55,7 @@
                                 選択
                             </label>
                         <?php else: ?>
-                            <span class="rounded-full bg-slate-100 px-3 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
+                            <span class="rounded-full bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-700">予約済み</span>
                         <?php endif; ?>
                     </div>
 
@@ -87,8 +87,17 @@
                         <?php if (!$slot['booking_id']): ?>
                             <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                 <?= csrf_field() ?>
+                                <input type="hidden" name="return_to" value="index">
                                 <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
                                     個別削除
+                                </button>
+                            </form>
+                        <?php else: ?>
+                            <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？');">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="return_to" value="index">
+                                <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                    予約ごと削除
                                 </button>
                             </form>
                         <?php endif; ?>
@@ -129,7 +138,7 @@
                                         選択
                                     </label>
                                 <?php else: ?>
-                                    <span class="text-xs text-slate-300">対象外</span>
+                                    <span class="text-xs text-rose-400">個別削除</span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-5 py-4 text-slate-700">
@@ -162,12 +171,19 @@
                                     <?php if (!$slot['booking_id']): ?>
                                         <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                             <?= csrf_field() ?>
+                                            <input type="hidden" name="return_to" value="index">
                                             <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
                                                 削除
                                             </button>
                                         </form>
                                     <?php else: ?>
-                                        <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
+                                        <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？');">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="return_to" value="index">
+                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
+                                                予約ごと削除
+                                            </button>
+                                        </form>
                                     <?php endif; ?>
                                 </div>
                             </td>

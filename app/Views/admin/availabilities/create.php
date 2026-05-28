@@ -222,12 +222,12 @@ foreach ($calendar['days'] as $day) {
                                                     詳細を見る
                                                 </button>
                                                 <?php if ($event['can_delete']): ?>
-                                                    <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                                    <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('<?= e($event['status'] === 'booked' ? '予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？' : 'この空き枠を削除しますか？') ?>');">
                                                         <?= csrf_field() ?>
-                                                        <button type="submit" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50">この枠を削除</button>
+                                                        <input type="hidden" name="return_to" value="create">
+                                                        <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
+                                                        <button type="submit" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50"><?= $event['status'] === 'booked' ? '予約ごと削除' : 'この枠を削除' ?></button>
                                                     </form>
-                                                <?php else: ?>
-                                                    <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
@@ -365,12 +365,12 @@ foreach ($calendar['days'] as $day) {
                                         詳細を見る
                                     </button>
                                     <?php if ($event['can_delete']): ?>
-                                        <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
+                                        <form action="/admin/availability-slots/<?= e((string) $event['id']) ?>/delete" method="POST" onsubmit="return confirm('<?= e($event['status'] === 'booked' ? '予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？' : 'この空き枠を削除しますか？') ?>');">
                                             <?= csrf_field() ?>
-                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">この枠を削除</button>
+                                            <input type="hidden" name="return_to" value="create">
+                                            <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
+                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"><?= $event['status'] === 'booked' ? '予約ごと削除' : 'この枠を削除' ?></button>
                                         </form>
-                                    <?php else: ?>
-                                        <span class="rounded-full bg-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">予約済みで削除不可</span>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -396,6 +396,7 @@ foreach ($calendar['days'] as $day) {
         <form action="/admin/availability-slots/details" method="POST" id="event-detail-form" class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <?= csrf_field() ?>
             <input type="hidden" name="slot_id" id="event-detail-slot-id" value="">
+            <input type="hidden" name="return_to" value="create">
             <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
 
             <div class="space-y-5">
@@ -471,10 +472,13 @@ foreach ($calendar['days'] as $day) {
 
                 <div class="rounded-3xl bg-slate-50 p-4">
                     <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Admin Actions</p>
-                    <p class="mt-2 text-sm leading-6 text-slate-500">管理者は詳細更新に加え、未予約枠をここから予約済みにできます。Google Calendar と Google Meet の作成は予約済み化した時だけ実行されます。</p>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">管理者は詳細更新、未予約枠の予約済み化、不要になったスケジュールの削除を行えます。予約済み予定を削除すると Google Calendar 上の予定も削除します。</p>
                 </div>
 
                 <div class="flex flex-wrap justify-end gap-3">
+                    <button type="submit" id="event-detail-delete-button" formaction="/admin/availability-slots/delete" formmethod="POST" class="rounded-2xl border border-rose-200 px-5 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50">
+                        この予定を削除
+                    </button>
                     <button type="submit" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">詳細を保存</button>
                     <button type="submit" id="event-detail-reserve-button" formaction="/admin/availability-slots/reserve" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">
                         予約済みにする
@@ -705,6 +709,7 @@ foreach ($calendar['days'] as $day) {
         const eventDetailGoogleEventId = document.getElementById('event-detail-google-event-id');
         const eventDetailMeetLink = document.getElementById('event-detail-meet-link');
         const eventDetailMeetEmpty = document.getElementById('event-detail-meet-empty');
+        const eventDetailDeleteButton = document.getElementById('event-detail-delete-button');
         const eventDetailReserveButton = document.getElementById('event-detail-reserve-button');
         const eventDetailTriggers = Array.from(document.querySelectorAll('.event-detail-trigger'));
         const deleteModal = document.getElementById('delete-modal');
@@ -1293,8 +1298,12 @@ foreach ($calendar['days'] as $day) {
             eventDetailMessageInput.value = eventData.message || '';
             eventDetailActiveInput.checked = Boolean(eventData.is_active);
             eventDetailGoogleEventId.textContent = eventData.google_event_id || '-';
+            eventDetailDeleteButton.textContent = isBooked ? '予約ごと削除' : 'この予定を削除';
             eventDetailReserveButton.classList.toggle('hidden', isBooked || !viewerCanManage);
             eventDetailReserveButton.disabled = isBooked || !viewerCanManage;
+            eventDetailDeleteButton.dataset.confirmMessage = isBooked
+                ? '予約済みの予定を削除します。Google カレンダー予定も削除されます。実行しますか？'
+                : 'この空き枠を削除しますか？';
 
             if (eventData.google_meet_url) {
                 eventDetailMeetLink.href = eventData.google_meet_url;
@@ -1315,6 +1324,15 @@ foreach ($calendar['days'] as $day) {
             eventDetailCompanyNameInput.readOnly = !viewerCanManage;
             eventDetailClientEmailInput.readOnly = !viewerCanManage;
             eventDetailClientPhoneInput.readOnly = !viewerCanManage;
+        }
+
+        if (eventDetailDeleteButton) {
+            eventDetailDeleteButton.addEventListener('click', (event) => {
+                const message = eventDetailDeleteButton.dataset.confirmMessage || 'このスケジュールを削除しますか？';
+                if (!window.confirm(message)) {
+                    event.preventDefault();
+                }
+            });
         }
 
         function clearSelection() {
