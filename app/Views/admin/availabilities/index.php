@@ -81,7 +81,7 @@
                         <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
                             <?= csrf_field() ?>
                             <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
-                                <?= (int) $slot['is_active'] === 1 ? '非表示にする' : '表示する' ?>
+                                <?= (int) $slot['is_active'] === 1 ? '非表示' : '表示' ?>
                             </button>
                         </form>
                         <?php if (!$slot['booking_id']): ?>
@@ -94,13 +94,13 @@
                                 data-slot-memo="<?= e($slot['memo'] ?: '') ?>"
                                 data-slot-active="<?= (int) $slot['is_active'] === 1 ? '1' : '0' ?>"
                             >
-                                予約済みにする
+                                予約済
                             </button>
                             <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="return_to" value="index">
                                 <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
-                                    個別削除
+                                    削除
                                 </button>
                             </form>
                         <?php else: ?>
@@ -108,7 +108,7 @@
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="return_to" value="index">
                                 <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
-                                    予約ごと削除
+                                    削除
                                 </button>
                             </form>
                         <?php endif; ?>
@@ -149,7 +149,7 @@
                                         選択
                                     </label>
                                 <?php else: ?>
-                                    <span class="text-xs text-rose-400">個別削除</span>
+                                    <span class="text-xs text-rose-400">削除</span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-5 py-4 text-slate-700">
@@ -176,7 +176,7 @@
                                     <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/toggle" method="POST">
                                         <?= csrf_field() ?>
                                         <button type="submit" class="rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100">
-                                            <?= (int) $slot['is_active'] === 1 ? '非表示にする' : '表示する' ?>
+                                            <?= (int) $slot['is_active'] === 1 ? '非表示' : '表示' ?>
                                         </button>
                                     </form>
                                     <?php if (!$slot['booking_id']): ?>
@@ -189,7 +189,7 @@
                                             data-slot-memo="<?= e($slot['memo'] ?: '') ?>"
                                             data-slot-active="<?= (int) $slot['is_active'] === 1 ? '1' : '0' ?>"
                                         >
-                                            予約済みにする
+                                            予約済
                                         </button>
                                         <form action="/admin/availability-slots/<?= e((string) $slot['id']) ?>/delete" method="POST" onsubmit="return confirm('この空き枠を削除しますか？');">
                                             <?= csrf_field() ?>
@@ -203,7 +203,7 @@
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="return_to" value="index">
                                             <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">
-                                                予約ごと削除
+                                                削除
                                             </button>
                                         </form>
                                     <?php endif; ?>
@@ -280,7 +280,7 @@
 
             <div class="flex flex-wrap justify-end gap-3">
                 <button type="button" id="list-reserve-cancel" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">キャンセル</button>
-                <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">予約済みにする</button>
+                <button type="submit" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">予約済</button>
             </div>
         </form>
     </div>

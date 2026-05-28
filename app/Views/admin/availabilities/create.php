@@ -226,7 +226,7 @@ foreach ($calendar['days'] as $day) {
                                                         <?= csrf_field() ?>
                                                         <input type="hidden" name="return_to" value="create">
                                                         <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
-                                                        <button type="submit" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50"><?= $event['status'] === 'booked' ? '予約ごと削除' : 'この枠を削除' ?></button>
+                                                        <button type="submit" class="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50">削除</button>
                                                     </form>
                                                 <?php endif; ?>
                                             </div>
@@ -369,7 +369,7 @@ foreach ($calendar['days'] as $day) {
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="return_to" value="create">
                                             <input type="hidden" name="week" value="<?= e($calendar['week_start']) ?>">
-                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"><?= $event['status'] === 'booked' ? '予約ごと削除' : 'この枠を削除' ?></button>
+                                            <button type="submit" class="rounded-full border border-rose-200 px-4 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50">削除</button>
                                         </form>
                                     <?php endif; ?>
                                 </div>
@@ -477,11 +477,11 @@ foreach ($calendar['days'] as $day) {
 
                 <div class="flex flex-wrap justify-end gap-3">
                     <button type="submit" id="event-detail-delete-button" formaction="/admin/availability-slots/delete" formmethod="POST" class="rounded-2xl border border-rose-200 px-5 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50">
-                        この予定を削除
+                        削除
                     </button>
                     <button type="submit" class="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100">詳細を保存</button>
                     <button type="submit" id="event-detail-reserve-button" formaction="/admin/availability-slots/reserve" class="rounded-2xl bg-ink px-5 py-3 text-sm font-medium text-white transition hover:bg-slate-800">
-                        予約済みにする
+                        予約済
                     </button>
                 </div>
             </div>
@@ -1298,7 +1298,7 @@ foreach ($calendar['days'] as $day) {
             eventDetailMessageInput.value = eventData.message || '';
             eventDetailActiveInput.checked = Boolean(eventData.is_active);
             eventDetailGoogleEventId.textContent = eventData.google_event_id || '-';
-            eventDetailDeleteButton.textContent = isBooked ? '予約ごと削除' : 'この予定を削除';
+            eventDetailDeleteButton.textContent = '削除';
             eventDetailReserveButton.classList.toggle('hidden', isBooked || !viewerCanManage);
             eventDetailReserveButton.disabled = isBooked || !viewerCanManage;
             eventDetailDeleteButton.dataset.confirmMessage = isBooked
